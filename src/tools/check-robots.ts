@@ -6,7 +6,10 @@ import { fetchRobotsTxt, checkCrawlerStatus, CRAWLERS, type CrawlerStatus } from
 import type { Finding } from "../types.js";
 
 export const checkRobotsInputSchema = z.object({
-  domain: z.string().min(3),
+  domain: z
+    .string()
+    .min(3)
+    .describe("Hostname or origin to inspect. Examples: `example.com`, `https://example.com`, `https://example.com/`. The tool fetches `https://<domain>/robots.txt` and reports per-crawler allow/disallow posture for all known AI training crawlers (GPTBot, CCBot, etc.), AI search crawlers (ChatGPT-User, PerplexityBot), and user-triggered fetchers. Read-only HTTP GET to /robots.txt only."),
 });
 
 export type CheckRobotsInput = z.infer<typeof checkRobotsInputSchema>;

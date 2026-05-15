@@ -7,8 +7,15 @@ import { parseHead, levenshtein } from "../lib/html.js";
 import type { Finding } from "../types.js";
 
 export const checkTechnicalInputSchema = z.object({
-  url: z.string().url(),
-  respect_robots: z.boolean().optional().default(true),
+  url: z
+    .string()
+    .url()
+    .describe("Public URL to audit. The tool fetches the URL once and inspects HEAD-section signals: HTTPS, canonical, OpenGraph, Twitter Card, hreflang, noindex, title length and overlap with H1. Body content is not parsed. Read-only HTTP GET."),
+  respect_robots: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), respect robots.txt before fetching. Set false only for auditing your own site where you've intentionally blocked crawlers."),
 });
 
 export type CheckTechnicalInput = z.infer<typeof checkTechnicalInputSchema>;

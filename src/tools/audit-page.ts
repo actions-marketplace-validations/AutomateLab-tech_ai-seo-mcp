@@ -14,9 +14,20 @@ import { freshnessScore, deriveGrade, computeWeightedScore } from "../lib/score.
 import type { Finding, AuditResult } from "../types.js";
 
 export const auditPageInputSchema = z.object({
-  url: z.string().url(),
-  include_raw_html: z.boolean().optional().default(false),
-  respect_robots: z.boolean().optional().default(true),
+  url: z
+    .string()
+    .url()
+    .describe("Public URL to audit. Must be a fully-qualified http(s) URL that returns HTTP 200 (redirects are followed). The tool fetches this URL once and runs every sub-audit (schema, robots, technical, sitemap, AI-Overview eligibility) against the response."),
+  include_raw_html: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If true, return the full raw HTML in the response under `raw_html`. Default false. Set true only when you need to inspect markup that wasn't captured by the structured findings; the payload can be large."),
+  respect_robots: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), the tool checks robots.txt before fetching and skips disallowed paths, returning a robots_blocked finding instead. Set to false ONLY for auditing your own site where you've intentionally blocked crawlers and need the audit to bypass that block."),
 });
 
 export type AuditPageInput = z.infer<typeof auditPageInputSchema>;

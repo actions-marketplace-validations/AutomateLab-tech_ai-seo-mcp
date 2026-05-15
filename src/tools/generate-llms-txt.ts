@@ -16,11 +16,31 @@ import {
 import type { Finding } from "../types.js";
 
 export const generateLlmsTxtInputSchema = z.object({
-  domain: z.string().min(3),
-  max_pages: z.number().int().min(1).max(100).optional().default(30),
-  include_full: z.boolean().optional().default(false),
-  site_name: z.string().optional(),
-  site_description: z.string().optional(),
+  domain: z
+    .string()
+    .min(3)
+    .describe("Hostname or origin to generate llms.txt for. Examples: `example.com`, `https://example.com`. The tool reads the domain's sitemap, fetches up to `max_pages` of them, and synthesizes a spec-compliant llms.txt grouped by section. Issues N+1 HTTP GETs: one for the sitemap, then one per sampled page. Read-only."),
+  max_pages: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(30)
+    .describe("How many pages to sample from the sitemap when building section groupings. Default 30. Each page is fetched (one HTTP GET per page) - keep this low for large sites or rate-limited hosts."),
+  include_full: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If true, also generate llms-full.txt (the expanded variant containing full page text, not just URLs and titles). Default false. The llms-full.txt output can be large; only enable when you actually plan to host both files."),
+  site_name: z
+    .string()
+    .optional()
+    .describe("Override the site name used in the generated llms.txt header. If omitted, inferred from the homepage's <title> tag."),
+  site_description: z
+    .string()
+    .optional()
+    .describe("Override the site description used in the generated llms.txt header. If omitted, inferred from the homepage's meta description."),
 });
 
 export type GenerateLlmsTxtInput = z.infer<typeof generateLlmsTxtInputSchema>;

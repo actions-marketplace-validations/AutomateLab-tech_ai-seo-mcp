@@ -8,8 +8,18 @@ import { XMLParser } from "fast-xml-parser";
 import type { Finding } from "../types.js";
 
 export const checkSitemapInputSchema = z.object({
-  domain: z.string().min(3),
-  max_urls_to_check: z.number().int().min(1).max(500).optional().default(100),
+  domain: z
+    .string()
+    .min(3)
+    .describe("Hostname or origin to inspect. Examples: `example.com`, `https://example.com`. The tool tries `/sitemap.xml` then the sitemap URL declared in robots.txt; follows sitemap index files one level deep. Read-only HTTP GETs against the domain only."),
+  max_urls_to_check: z
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .optional()
+    .default(100)
+    .describe("Cap on how many URLs from the sitemap to sample for lastmod, image/video extension, and structural checks. Default 100. Increase up to 500 for large sites where you want a more representative sample; each extra URL is one HTTP HEAD."),
 });
 
 export type CheckSitemapInput = z.infer<typeof checkSitemapInputSchema>;

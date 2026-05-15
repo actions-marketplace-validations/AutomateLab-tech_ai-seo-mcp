@@ -9,8 +9,15 @@ import { freshnessScore } from "../lib/score.js";
 import type { Finding } from "../types.js";
 
 export const scoreAiOverviewEligibilityInputSchema = z.object({
-  url: z.string().url(),
-  respect_robots: z.boolean().optional().default(true),
+  url: z
+    .string()
+    .url()
+    .describe("Public URL to score. The tool fetches the URL once and runs deterministic, rule-based scoring across six factors (semantic completeness, structured data, E-E-A-T signals, entity density, freshness, technical hygiene) using published 2025-2026 correlation studies. No LLM calls. Read-only HTTP GET."),
+  respect_robots: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), respect robots.txt before fetching. Set false only for auditing your own site where you've intentionally blocked crawlers."),
 });
 
 export type ScoreAiOverviewEligibilityInput = z.infer<typeof scoreAiOverviewEligibilityInputSchema>;

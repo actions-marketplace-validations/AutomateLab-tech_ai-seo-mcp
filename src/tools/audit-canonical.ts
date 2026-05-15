@@ -7,8 +7,15 @@ import { parseHead } from "../lib/html.js";
 import type { Finding } from "../types.js";
 
 export const auditCanonicalInputSchema = z.object({
-  url: z.string().url(),
-  respect_robots: z.boolean().optional().default(true),
+  url: z
+    .string()
+    .url()
+    .describe("Public URL whose canonical link tag and og:url consistency you want to audit. Must be a fully-qualified http(s) URL. The tool fetches the URL (following redirects) and inspects only the <head> section; the body is not parsed."),
+  respect_robots: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), respect robots.txt before fetching. Set false only for auditing your own site where you've intentionally blocked crawlers."),
 });
 
 export type AuditCanonicalInput = z.infer<typeof auditCanonicalInputSchema>;
