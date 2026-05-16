@@ -32,7 +32,19 @@ export const auditPageInputSchema = z.object({
 
 export type AuditPageInput = z.infer<typeof auditPageInputSchema>;
 
+export interface CitationVerdict {
+  will_ai_cite: "unlikely" | "marginal" | "likely";
+  top_3_blockers: Array<{
+    category: string;
+    message: string;
+    fix: string;
+    estimated_impact?: "high" | "medium" | "low";
+  }>;
+  one_line_summary: string;
+}
+
 export interface AuditPageResult extends AuditResult {
+  citation_verdict: CitationVerdict;
   dimension_scores: {
     schema: number;
     robots: number;
@@ -262,9 +274,38 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     return true;
   });
 
+  // --- Citation verdict (prepended block) ---
+  const will_ai_cite: "unlikely" | "marginal" | "likely" =
+    score < 50 ? "unlikely" : score <= 75 ? "marginal" : "likely";
+
+  const impactOrder = { high: 0, medium: 1, low: 2, undefined: 3 };
+  const severityOrder = { critical: 0, warning: 1, info: 2 };
+  const top_3_blockers = [...deduped]
+    .filter((f) => f.severity === "critical" || f.severity === "warning")
+    .sort((a, b) => {
+      const ia = impactOrder[a.estimated_impact ?? "undefined"];
+      const ib = impactOrder[b.estimated_impact ?? "undefined"];
+      if (ia !== ib) return ia - ib;
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    })
+    .slice(0, 3)
+    .map((f) => ({
+      category: f.category,
+      message: f.message,
+      fix: f.fix,
+      estimated_impact: f.estimated_impact,
+    }));
+
+  const topBlockerMessage =
+    top_3_blockers.length > 0 ? top_3_blockers[0].message : "no critical blockers found";
+  const one_line_summary = `AI assistants are ${will_ai_cite} to cite this page because ${topBlockerMessage.charAt(0).toLowerCase()}${topBlockerMessage.slice(1).replace(/\.$/, "")}.`;
+
+  const citation_verdict: CitationVerdict = { will_ai_cite, top_3_blockers, one_line_summary };
+
   const output: AuditPageResult = {
     url: input.url,
     fetched_at,
+    citation_verdict,
     findings: deduped,
     score,
     grade,

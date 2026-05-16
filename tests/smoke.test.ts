@@ -132,6 +132,13 @@ describe("audit_page - automatelab.tech (network)", () => {
     expect(["A", "B", "C", "D", "F"]).toContain(result.grade);
     expect(result.findings).toBeInstanceOf(Array);
     expect(result.dimension_scores).toHaveProperty("schema");
+    // citation_verdict block
+    expect(result.citation_verdict).toBeDefined();
+    expect(["unlikely", "marginal", "likely"]).toContain(result.citation_verdict.will_ai_cite);
+    expect(result.citation_verdict.top_3_blockers).toBeInstanceOf(Array);
+    expect(result.citation_verdict.top_3_blockers.length).toBeLessThanOrEqual(3);
+    expect(typeof result.citation_verdict.one_line_summary).toBe("string");
+    expect(result.citation_verdict.one_line_summary.length).toBeGreaterThan(0);
   });
 });
 
