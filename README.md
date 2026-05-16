@@ -97,7 +97,7 @@ Restart Claude Desktop. Any MCP client that supports stdio transport works - sam
 ---
 
 <details>
-<summary>All 13 tools</summary>
+<summary>All 14 tools</summary>
 
 | Tool | Purpose |
 |------|---------|
@@ -114,6 +114,7 @@ Restart Claude Desktop. Any MCP client that supports stdio transport works - sam
 | `rewrite_for_aeo` | Rewrite content for Answer Engine Optimization (BLUF structure, FAQ format, schema additions). |
 | `rewrite_for_geo` | Rewrite content for Generative Engine Optimization (entity definitions, comparison tables, synthesis-ready structure). |
 | `extract_entities` | Extract named entities, `sameAs` links, and citation-density score from a page's content and structured data. |
+| `diff_pages` | Compare two URLs for AI citation-worthiness: side-by-side dimension scores, gap analysis, and prioritized fix recommendations for url_a. |
 
 Environment variables: see [ENV.md](./ENV.md).
 

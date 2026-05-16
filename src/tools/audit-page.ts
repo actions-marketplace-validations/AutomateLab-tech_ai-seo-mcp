@@ -11,6 +11,7 @@ import { checkRobots } from "./check-robots.js";
 import { checkSitemap } from "./check-sitemap.js";
 import { scoreAiOverviewEligibility } from "./score-ai-overview-eligibility.js";
 import { freshnessScore, deriveGrade, computeWeightedScore } from "../lib/score.js";
+import { renderScorecardHtml } from "../lib/scorecard-html.js";
 import type { Finding, AuditResult } from "../types.js";
 
 export const auditPageInputSchema = z.object({
@@ -28,6 +29,11 @@ export const auditPageInputSchema = z.object({
     .optional()
     .default(true)
     .describe("If true (default), the tool checks robots.txt before fetching and skips disallowed paths, returning a robots_blocked finding instead. Set to false ONLY for auditing your own site where you've intentionally blocked crawlers and need the audit to bypass that block."),
+  generate_report: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("If true, return a standalone HTML scorecard in the `report_html` field. The HTML is self-contained (no external dependencies) and can be saved as a .html file or pasted to Gist/CodePen. Default false to keep audits cheap."),
 });
 
 export type AuditPageInput = z.infer<typeof auditPageInputSchema>;
@@ -56,6 +62,7 @@ export interface AuditPageResult extends AuditResult {
     sitemap: number;
   };
   raw_html?: string;
+  report_html?: string;
 }
 
 export async function auditPage(input: AuditPageInput): Promise<AuditPageResult> {
@@ -314,6 +321,17 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
 
   if (input.include_raw_html) {
     output.raw_html = result.body;
+  }
+
+  if (input.generate_report) {
+    output.report_html = renderScorecardHtml({
+      url: input.url,
+      fetched_at,
+      score,
+      grade,
+      citation_verdict,
+      dimension_scores: dimensionScores,
+    });
   }
 
   return output;

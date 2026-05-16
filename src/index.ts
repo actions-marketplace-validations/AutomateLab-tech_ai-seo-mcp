@@ -19,6 +19,7 @@ import { scoreCitationWorthiness } from "./tools/score-citation-worthiness.js";
 import { rewriteForAeo } from "./tools/rewrite-for-aeo.js";
 import { rewriteForGeo } from "./tools/rewrite-for-geo.js";
 import { extractEntities } from "./tools/extract-entities.js";
+import { diffPages, diffPagesInputSchema } from "./tools/diff-pages.js";
 import type { ToolError } from "./types.js";
 import { ToolFetchError } from "./lib/fetch.js";
 
@@ -385,6 +386,20 @@ server.tool(
     }
     return wrapHandler(() => extractEntities(input as Parameters<typeof extractEntities>[0]));
   }
+);
+
+// --- Tool 14: diff_pages ---
+server.tool(
+  "diff_pages",
+  [
+    "Compare two URLs for AI citation-worthiness and return a structured breakdown of which page is more likely to be cited and why. Typical use: your page (url_a) vs a competitor's page (url_b).",
+    "Read-only. Runs audit_page on both URLs in parallel (2 HTTP fetches per URL), then diffs dimension_scores and findings. No new fetch logic beyond what audit_page already does.",
+    "Deterministic, rule-based; no LLM calls. Same two URLs return the same comparison on repeated runs.",
+    "When to use: competitive gap analysis - understand exactly which dimensions (schema, structure, robots, entity density, freshness, technical, authority, sitemap) put a competitor ahead, and get prioritized fix_recommendations_for_a to close the gap. For a single-URL audit, use audit_page. For overall scoring of one page, use score_citation_worthiness.",
+    "Capped at 2 URLs per call. Heuristic verdict - does not claim to know what AI assistants actually cite; verdict matches audit_page's existing rubric.",
+  ].join("\n\n"),
+  diffPagesInputSchema.shape,
+  async (input) => wrapHandler(() => diffPages(input))
 );
 
 // --- Start server ---

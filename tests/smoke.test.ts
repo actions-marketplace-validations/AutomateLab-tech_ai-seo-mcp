@@ -16,6 +16,7 @@ import { generateLlmsTxtTool } from "../src/tools/generate-llms-txt.js";
 import { validateLlmsTxt } from "../src/tools/validate-llms-txt.js";
 import { scoreCitationWorthiness } from "../src/tools/score-citation-worthiness.js";
 import { extractEntities } from "../src/tools/extract-entities.js";
+import { diffPages } from "../src/tools/diff-pages.js";
 // rewrite tools require LLM host - excluded from automated smoke tests
 
 const skipNet = process.env["CI"] === "true";
@@ -96,6 +97,34 @@ describe("extract_entities - text mode", () => {
   });
 });
 
+describe("diff_pages - network (two real URLs)", () => {
+  it.skipIf(skipNet)("returns valid diff structure for two URLs", async () => {
+    const result = await diffPages({
+      url_a: "https://automatelab.tech",
+      url_b: "https://example.com",
+      query: "AI SEO audit tool",
+      respect_robots: false,
+    });
+    expect(result.url_a).toBe("https://automatelab.tech");
+    expect(result.url_b).toBe("https://example.com");
+    expect(result.query).toBe("AI SEO audit tool");
+    expect(["a", "b", "tie"]).toContain(result.better_for_citation);
+    expect(result.scores.a).toBeGreaterThanOrEqual(0);
+    expect(result.scores.a).toBeLessThanOrEqual(100);
+    expect(result.scores.b).toBeGreaterThanOrEqual(0);
+    expect(result.scores.b).toBeLessThanOrEqual(100);
+    // delta has all 8 dimensions
+    const dims = ["schema", "structure", "robots", "entity_density", "freshness", "technical", "authority", "sitemap"] as const;
+    for (const dim of dims) {
+      expect(result.delta[dim]).toBeDefined();
+      expect(["a", "b", "tie"]).toContain(result.delta[dim].advantage);
+    }
+    expect(result.missing_in_a).toBeInstanceOf(Array);
+    expect(result.missing_in_b).toBeInstanceOf(Array);
+    expect(result.fix_recommendations_for_a).toBeInstanceOf(Array);
+  });
+});
+
 // ============ Network-dependent tests ============
 
 describe("check_robots - example.com (network)", () => {
@@ -139,6 +168,32 @@ describe("audit_page - automatelab.tech (network)", () => {
     expect(result.citation_verdict.top_3_blockers.length).toBeLessThanOrEqual(3);
     expect(typeof result.citation_verdict.one_line_summary).toBe("string");
     expect(result.citation_verdict.one_line_summary.length).toBeGreaterThan(0);
+    // report_html absent when not requested
+    expect(result.report_html).toBeUndefined();
+  });
+
+  it.skipIf(skipNet)("returns standalone HTML scorecard when generate_report=true", async () => {
+    const result = await auditPage({
+      url: "https://automatelab.tech",
+      include_raw_html: false,
+      respect_robots: false,
+      generate_report: true,
+    });
+    expect(typeof result.report_html).toBe("string");
+    const html = result.report_html as string;
+    // must be a complete HTML document
+    expect(html).toMatch(/<!DOCTYPE html>/i);
+    expect(html).toMatch(/<html/);
+    expect(html).toMatch(/<\/html>/);
+    // must contain the audited URL
+    expect(html).toContain("automatelab.tech");
+    // must contain the grade
+    expect(html).toContain(result.grade);
+    // must contain the score
+    expect(html).toContain(String(result.score));
+    // no external stylesheet or script dependencies
+    expect(html).not.toMatch(/src="https?:\/\//);
+    expect(html).not.toMatch(/href="https?:\/\/[^"]+\.css/);
   });
 });
 
