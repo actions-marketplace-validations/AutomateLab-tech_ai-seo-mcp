@@ -13,8 +13,8 @@ Thanks for considering a contribution.
 ## Local setup
 
 ```bash
-git clone https://github.com/AutomateLab-tech/ai-seo.git
-cd ai-seo
+git clone https://github.com/AutomateLab-tech/ai-seo-mcp.git
+cd ai-seo-mcp
 npm install
 npm run build
 npm test
@@ -29,7 +29,7 @@ For local development against a live MCP client, point the client at your built 
   "mcpServers": {
     "ai-seo-dev": {
       "command": "node",
-      "args": ["/absolute/path/to/ai-seo/dist/index.js"]
+      "args": ["/absolute/path/to/ai-seo-mcp/dist/index.js"]
     }
   }
 }

@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.AutomateLab-tech/ai-seo",
+  "name": "io.github.AutomateLab-tech/ai-seo-mcp",
   "description": "AI Citation Toolkit - audit, score, and rewrite web pages for AI-citation eligibility. AEO/GEO/LLM visibility for any MCP client.",
   "repository": {
-    "url": "https://github.com/AutomateLab-tech/ai-seo",
+    "url": "https://github.com/AutomateLab-tech/ai-seo-mcp",
     "source": "github"
   },
-  "version": "0.1.1",
+  "version": "0.1.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@automatelab/ai-seo-mcp",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "transport": {
         "type": "stdio"
       }

@@ -13,7 +13,7 @@ Only the latest minor release receives security fixes during the 0.x phase.
 
 **Do not open a public issue for a security vulnerability.**
 
-Email the maintainers privately by opening a [GitHub Security Advisory](https://github.com/AutomateLab-tech/ai-seo/security/advisories/new) on the repository. This routes the report directly to maintainers without disclosing it publicly.
+Email the maintainers privately by opening a [GitHub Security Advisory](https://github.com/AutomateLab-tech/ai-seo-mcp/security/advisories/new) on the repository. This routes the report directly to maintainers without disclosing it publicly.
 
 Please include:
 

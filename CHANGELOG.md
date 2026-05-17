@@ -4,11 +4,23 @@ All notable changes to `@automatelab/ai-seo-mcp` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-05-17
+
+### Changed
+
+- GitHub repository renamed to `ai-seo-mcp`. Package name (`@automatelab/ai-seo-mcp`) and all install commands unchanged.
+- Updated `mcpName` to `io.github.AutomateLab-tech/ai-seo-mcp` in `package.json` and `server.json`.
+- Updated homepage, repository URLs, User-Agent string, and scorecard footer link to the new repo URL.
+
+## [0.1.2] - 2026-05-16
+
+- `diff_pages` tool added; optional HTML scorecard for `audit_page`.
+
 ## [0.1.1] - 2026-05-15
 
 ### Added
 
-- `mcpName` field (`io.github.AutomateLab-tech/ai-seo`) in `package.json` for MCP Registry ownership verification.
+- `mcpName` field in `package.json` for MCP Registry ownership verification.
 
 ## [0.1.0] - 2026-05-15
 
@@ -36,5 +48,7 @@ Initial public release.
 - No PyPI distribution in 0.1.0. Planned for 0.2.0.
 - AI Overview eligibility scoring uses deterministic heuristics from published correlation studies, not live SERP queries.
 
-[0.1.1]: https://github.com/AutomateLab-tech/ai-seo/releases/tag/v0.1.1
-[0.1.0]: https://github.com/AutomateLab-tech/ai-seo/releases/tag/v0.1.0
+[0.1.3]: https://github.com/AutomateLab-tech/ai-seo-mcp/releases/tag/v0.1.3
+[0.1.2]: https://github.com/AutomateLab-tech/ai-seo-mcp/releases/tag/v0.1.2
+[0.1.1]: https://github.com/AutomateLab-tech/ai-seo-mcp/releases/tag/v0.1.1
+[0.1.0]: https://github.com/AutomateLab-tech/ai-seo-mcp/releases/tag/v0.1.0
