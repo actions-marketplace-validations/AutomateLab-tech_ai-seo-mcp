@@ -1,5 +1,5 @@
 name: "AI-SEO audit"
-description: "Audit one or more URLs for AI-citation readiness. Fails the build if any score drops below threshold. Posts results as a workflow summary."
+description: "Audits URLs for AI-citation readiness. Posts results as a workflow summary."
 author: "automatelab.tech"
 branding:
   icon: "search"
