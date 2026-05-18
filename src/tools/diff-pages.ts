@@ -130,8 +130,8 @@ function deriveMissing(findingsA: Finding[], findingsB: Finding[]): { missingInA
 export async function diffPages(input: DiffPagesInput): Promise<DiffPagesResult> {
   // Run both audits in parallel
   const [resultA, resultB] = await Promise.all([
-    auditPage({ url: input.url_a, include_raw_html: false, generate_report: false, respect_robots: input.respect_robots }),
-    auditPage({ url: input.url_b, include_raw_html: false, generate_report: false, respect_robots: input.respect_robots }),
+    auditPage({ url: input.url_a, include_raw_html: false, generate_report: false, respect_robots: input.respect_robots, render: "static" }),
+    auditPage({ url: input.url_b, include_raw_html: false, generate_report: false, respect_robots: input.respect_robots, render: "static" }),
   ]);
 
   const dimA = resultA.dimension_scores;

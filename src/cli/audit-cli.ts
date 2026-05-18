@@ -99,6 +99,7 @@ async function main(): Promise<void> {
         include_raw_html: false,
         respect_robots: args.respectRobots,
         generate_report: false,
+        render: "static",
       });
       const below = result.score < args.minScore;
       if (below) anyBelow = true;

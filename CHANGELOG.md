@@ -4,6 +4,20 @@ All notable changes to `@automatelab/ai-seo-mcp` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-05-18
+
+### Added
+
+- **`test_citation` tool** — simulates "would an AI engine cite this page for this query?". The host LLM role-plays the chosen engine (chatgpt / claude / perplexity / google_ai_overviews / any), reads the page content, and returns a cite/no-cite verdict with the verbatim excerpt it would surface plus ranked improvements. Falls back to a deterministic heuristic from `score_citation_worthiness` when MCP sampling is unavailable.
+- **`audit_sitemap` tool** — site-wide content audit. Discovers the sitemap, samples N URLs by deterministic uniform stride (default 10, max 50), runs `audit_page` on each in batched parallel calls, and returns score distribution (avg / median / min / max / p25 / p75), grade distribution, worst 5 pages, and the 10 most-common findings across the sample.
+- **MCP sampling in `extract_entities`** — primary path now asks the host LLM to do the NER, returning typed entities (Organization / Person / Product / Technology / Location / Event) with `sameAs` URIs. Falls back to the existing regex extractor when sampling is unavailable. The result includes `mode: "sampling" | "regex_fallback"` so callers can tell which path ran.
+- **Headless rendering for SPAs** — `audit_page`, `extract_entities`, `audit_schema`, and `check_technical` accept `render: "static" | "headless"`. Default `static`. `headless` spins up Playwright Chromium (optional peer dep `playwright-core`), waits for networkidle, and audits the rendered DOM. Adds 3-10s and requires a one-time `npx playwright install chromium`.
+
+### Changed
+
+- `extract_entities` now returns a `mode` field indicating which extraction path ran.
+- `audit_page` SPA-empty finding now differentiates between static and headless modes — the fix message guides users to install playwright-core if running static, or to inspect their JS hydration if already running headless.
+
 ## [0.3.0] - 2026-05-18
 
 ### Added

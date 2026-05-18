@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { politeFetch, ToolFetchError, type HostDelayMap } from "../lib/fetch.js";
+import type { RenderMode } from "../lib/cache.js";
 import { parseHead, levenshtein } from "../lib/html.js";
 import type { Finding } from "../types.js";
 
@@ -58,12 +59,14 @@ export interface TechnicalResult {
 export async function checkTechnical(
   input: CheckTechnicalInput,
   hostDelays?: HostDelayMap,
-  robotsCache?: Map<string, string>
+  robotsCache?: Map<string, string>,
+  renderMode?: RenderMode
 ): Promise<TechnicalResult> {
   const result = await politeFetch(input.url, {
     respectRobots: input.respect_robots,
     hostDelays,
     robotsCache,
+    renderMode,
   });
 
   const ct = result.headers["content-type"];

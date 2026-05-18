@@ -78,6 +78,7 @@ export async function auditSite(input: AuditSiteInput): Promise<AuditSiteResult>
       include_raw_html: false,
       respect_robots: input.respect_robots,
       generate_report: false,
+      render: "static",
     }),
     checkRobots({ domain: hostname }),
     checkSitemap({ domain: hostname, max_urls_to_check: 50 }),

@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { politeFetch, ToolFetchError, type HostDelayMap } from "../lib/fetch.js";
+import type { RenderMode } from "../lib/cache.js";
 import { parseJsonLd, getAllSchemaTypes, getMissingPriorityTypes, validateJsonLd, computeSchemaScore } from "../lib/schema.js";
 import type { Finding } from "../types.js";
 
@@ -29,7 +30,8 @@ export interface AuditSchemaResult {
 export async function auditSchema(
   input: AuditSchemaInput,
   hostDelays?: HostDelayMap,
-  robotsCache?: Map<string, string>
+  robotsCache?: Map<string, string>,
+  renderMode?: RenderMode
 ): Promise<AuditSchemaResult> {
   let html: string;
   let source: "url" | "inline";
@@ -44,6 +46,7 @@ export async function auditSchema(
       respectRobots: input.respect_robots,
       hostDelays,
       robotsCache,
+      renderMode,
     });
     const ct = result.headers["content-type"];
     const ctStr = Array.isArray(ct) ? ct[0] : (ct ?? "");

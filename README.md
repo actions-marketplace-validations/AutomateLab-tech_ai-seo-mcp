@@ -17,7 +17,7 @@ Works inside Claude, Cursor, Windsurf, Codex, and any MCP client that speaks std
 - **AI crawler access** - GPTBot, OAI-SearchBot, ClaudeBot, and PerplexityBot allowed or blocked in `robots.txt`
 - **`llms.txt`** - present, spec-compliant, links alive
 - **Structured answer extraction** - FAQ headings, BLUF paragraphs, answer-ready blocks
-- **Schema completeness** - FAQPage, Article, Organization, Person; flags deprecated patterns
+- **[[schema]] completeness** - FAQPage, Article, Organization, Person; flags deprecated patterns
 - **Entity clarity** - named entity density and `sameAs` coverage that help AI systems identify the subject
 - **Citation formatting** - canonical URL hygiene, `og:url`, `hreflang`, noindex traps
 - **Sitemap freshness** - `lastmod` signals that tell crawlers the page is current
@@ -87,6 +87,19 @@ Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/App
 ```
 
 Restart Claude Desktop. Any MCP client that supports stdio transport works - same `command` / `args` pattern.
+
+### Optional: headless rendering for SPAs
+
+By default `audit_page` reads raw HTML — fast, but misses content on React/Vue/Angular SPAs. Pass `render: "headless"` to spin up Chromium and audit the rendered DOM (adds 3-10s per audit).
+
+One-time install:
+
+```bash
+npm install playwright-core
+npx playwright install chromium
+```
+
+Then call `audit_page` with `render: "headless"`. Use static for everything else — most marketing sites and docs render fine without it.
 
 ---
 

@@ -5,6 +5,7 @@ import { fetch as undiciFetch } from "undici";
 import { POLITE_FETCH } from "./config.js";
 import { checkRobotsAllowed, fetchRobotsTxt } from "./robots.js";
 import { cacheGet, cacheSet, type RenderMode } from "./cache.js";
+import { renderHeadless, HeadlessUnavailableError } from "./headless.js";
 import type { ToolError } from "../types.js";
 
 // Per-call hostname -> last-request timestamp for inter-request delay tracking.
@@ -135,6 +136,32 @@ export async function politeFetch(
   }
 
   const startTime = Date.now();
+
+  // Headless rendering branch: hand off to Playwright, skip undici entirely.
+  if (renderMode === "headless") {
+    console.error(`[fetch] GET (headless) ${url}`);
+    try {
+      const rendered = await renderHeadless(url);
+      const duration = Date.now() - startTime;
+      console.error(`[fetch] ${rendered.statusCode} (headless) ${url} (${duration}ms)`);
+      const headlessResult: FetchResult = {
+        body: rendered.body,
+        finalUrl: rendered.finalUrl,
+        statusCode: rendered.statusCode,
+        headers: rendered.headers,
+        redirected: rendered.redirected,
+      };
+      if (!opts.noCache) cacheSet(url, headlessResult, renderMode);
+      return headlessResult;
+    } catch (err) {
+      if (err instanceof HeadlessUnavailableError) {
+        throw new ToolFetchError({ type: "fetch_error", url, message: err.message });
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new ToolFetchError({ type: "fetch_error", url, message: `headless render failed: ${msg}` });
+    }
+  }
+
   console.error(`[fetch] GET ${url}`);
 
   try {

@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { politeFetch, ToolFetchError, type HostDelayMap } from "../lib/fetch.js";
+import type { RenderMode } from "../lib/cache.js";
 import { parseHead, parseBody } from "../lib/html.js";
 import { parseJsonLd, getAllSchemaTypes, validateJsonLd } from "../lib/schema.js";
 import { checkTechnical } from "./check-technical.js";
@@ -34,6 +35,11 @@ export const auditPageInputSchema = z.object({
     .optional()
     .default(false)
     .describe("If true, return a standalone HTML scorecard in the `report_html` field. The HTML is self-contained (no external dependencies) and can be saved as a .html file or pasted to Gist/CodePen. Default false to keep audits cheap."),
+  render: z
+    .enum(["static", "headless"])
+    .optional()
+    .default("static")
+    .describe("Rendering mode. `static` (default) fetches raw HTML via HTTP — fast (<1s) but misses JS-rendered content typical of SPAs (React/Vue/Angular landing pages). `headless` spins up Playwright Chromium, waits for networkidle, and audits the rendered DOM — adds 3-10s per audit and requires `playwright-core` installed plus a one-time `npx playwright install chromium`. Use `headless` when the static audit shows `content_quality: \"spa_empty\"` or you know the target is JS-rendered."),
 });
 
 export type AuditPageInput = z.infer<typeof auditPageInputSchema>;
@@ -94,12 +100,14 @@ function countScriptTags(html: string): number {
 export async function auditPage(input: AuditPageInput): Promise<AuditPageResult> {
   const hostDelays: HostDelayMap = new Map();
   const robotsCache = new Map<string, string>();
+  const renderMode: RenderMode = input.render ?? "static";
 
   // Fetch URL once
   const result = await politeFetch(input.url, {
     respectRobots: input.respect_robots,
     hostDelays,
     robotsCache,
+    renderMode,
   });
 
   const ct = result.headers["content-type"];
@@ -121,7 +129,8 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     const schemaResult = await auditSchema(
       { url: input.url, respect_robots: input.respect_robots },
       hostDelays,
-      robotsCache
+      robotsCache,
+      renderMode
     );
     schemaScore = schemaResult.ai_citation_readiness_score;
     allFindings.push(...schemaResult.findings);
@@ -135,7 +144,8 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     const techResult = await checkTechnical(
       { url: input.url, respect_robots: input.respect_robots },
       hostDelays,
-      robotsCache
+      robotsCache,
+      renderMode
     );
     // Derive technical score from findings
     const techFindings = techResult.findings;
@@ -297,13 +307,22 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
 
   const scriptCount = countScriptTags(result.body);
   const contentQuality = detectContentQuality(body.bodyText, scriptCount);
-  if (contentQuality === "spa_empty") {
+  if (contentQuality === "spa_empty" && renderMode === "static") {
     allFindings.push({
       severity: "critical",
       category: "technical",
       where: "<body>",
       message: "Page appears to be a JS-rendered SPA (low body text, many script tags); audit results are likely incomplete.",
-      fix: "Re-run audit_page with render: 'headless' (when available), or serve SSR/prerendered HTML so AI crawlers without JS see real content.",
+      fix: "Re-run audit_page with render: 'headless' to capture the rendered DOM, or serve SSR/prerendered HTML so AI crawlers without JS see real content.",
+      estimated_impact: "high",
+    });
+  } else if (contentQuality === "spa_empty" && renderMode === "headless") {
+    allFindings.push({
+      severity: "critical",
+      category: "technical",
+      where: "<body>",
+      message: "Even with headless rendering the page body has little extractable text — the SPA may render content lazily or behind interaction.",
+      fix: "Serve SSR/prerendered HTML; AI crawlers (and audit_page even with render=headless) cannot reliably trigger lazy/interaction-gated content.",
       estimated_impact: "high",
     });
   }

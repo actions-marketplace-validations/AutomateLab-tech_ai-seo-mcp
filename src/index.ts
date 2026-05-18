@@ -19,15 +19,17 @@ import { scoreCitationWorthiness } from "./tools/score-citation-worthiness.js";
 import { rewriteForAeo } from "./tools/rewrite-for-aeo.js";
 import { rewriteForGeo } from "./tools/rewrite-for-geo.js";
 import { extractEntities } from "./tools/extract-entities.js";
+import { testCitation } from "./tools/test-citation.js";
 import { diffPages, diffPagesInputSchema } from "./tools/diff-pages.js";
 import { auditSite, auditSiteInputSchema } from "./tools/audit-site.js";
+import { auditSitemap, auditSitemapInputSchema } from "./tools/audit-sitemap.js";
 import { saveAuditReport, saveAuditReportInputSchema } from "./tools/save-audit-report.js";
 import type { ToolError } from "./types.js";
 import { ToolFetchError } from "./lib/fetch.js";
 
 const server = new McpServer({
   name: "@automatelab/ai-seo-mcp",
-  version: "0.3.0",
+  version: "0.3.4",
 });
 
 /** Serialize a ToolError to MCP error content. */
@@ -63,6 +65,7 @@ server.tool(
     "Full AI-SEO audit of a single URL: returns categorized findings (info/warning/error) with severity, fix instructions, and a 0-100 composite score plus per-dimension subscores.",
     "Read-only. Fetches the URL once and runs every sub-audit (schema, robots, technical, sitemap, AI-Overview eligibility) against the response. No writes, no third-party APIs, no auth required, no rate limits beyond polite per-host throttling.",
     "Deterministic, rule-based scoring; no LLM calls. Same URL + same input flags returns the same score.",
+    "Supports `render: \"static\" | \"headless\"`. Default `static` (fast, raw HTML only). Use `headless` for React/Vue/Angular SPAs — adds 3-10s and requires the optional `playwright-core` peer dep plus a one-time `npx playwright install chromium`.",
     "When to use: the default entry point for `audit any page`. Use this instead of calling check_technical / audit_schema / check_robots / check_sitemap / score_ai_overview_eligibility individually unless you specifically need only one dimension - this tool composes all of them.",
   ].join("\n\n"),
   auditPageInputSchema.shape,
@@ -360,9 +363,9 @@ server.tool(
 server.tool(
   "extract_entities",
   [
-    "Extract named entities, linked concepts, and sameAs graph nodes from a page's content and structured data. Combines body-text NER heuristics with JSON-LD `@type` / `sameAs` walking.",
+    "Extract named entities, linked concepts, and sameAs graph nodes from a page's content and structured data. Combines body-text NER with JSON-LD `@type` / `sameAs` walking.",
     "Read-only when given `url` (one HTTP GET). Zero network when given `text`.",
-    "Deterministic, rule-based; no LLM. Output is a list of entities with type, confidence, and any sameAs URIs found in structured data.",
+    "Primary path: MCP sampling - the host LLM does the NER and returns typed entities with sameAs URIs. Fallback path: deterministic regex-based extractor when sampling is unavailable. The result includes `mode: \"sampling\" | \"regex_fallback\"` so callers can tell which path ran.",
     "When to use: building an entity map for schema generation, or auditing whether a page's entities match its target topic. To validate the JSON-LD itself, use `audit_schema`.",
     "Either `url` or `text` must be provided.",
   ].join("\n\n"),
@@ -381,16 +384,68 @@ server.tool(
       .optional()
       .default(true)
       .describe("If true (default), respect robots.txt when fetching `url`. Ignored when `text` is used."),
+    render: z
+      .enum(["static", "headless"])
+      .optional()
+      .default("static")
+      .describe("Rendering mode for `url`. `static` (default) reads raw HTML. `headless` runs Playwright Chromium to capture JS-rendered content (adds 3-10s; requires `playwright-core` + `npx playwright install chromium`). Ignored when `text` is used."),
   },
   async (input) => {
     if (!input.url && !input.text) {
       return toolError({ type: "invalid_url", message: "One of url or text is required" });
     }
-    return wrapHandler(() => extractEntities(input as Parameters<typeof extractEntities>[0]));
+    return wrapHandler(() =>
+      extractEntities(input as Parameters<typeof extractEntities>[0], undefined, undefined, server)
+    );
   }
 );
 
-// --- Tool 14: diff_pages ---
+// --- Tool 14: test_citation ---
+server.tool(
+  "test_citation",
+  [
+    "Simulate `would an AI engine cite this page for this query?`. The host LLM role-plays the chosen engine (chatgpt / claude / perplexity / google_ai_overviews / any), reads the page content, and returns a cite/no-cite verdict with the verbatim excerpt it would surface plus ranked improvements.",
+    "Read-only when given `url` (one HTTP GET). Zero network when given `text`.",
+    "Primary path uses MCP sampling. If the host doesn't support sampling, falls back to a deterministic heuristic derived from `score_citation_worthiness` (overall_score + per-engine subscore must both clear thresholds). The result includes `mode: \"sampling\" | \"static_heuristic\"` so callers can tell which path ran.",
+    "When to use: pre-publish gut-check for a specific query, or auditing whether existing content earns citation surface. Distinct from `score_citation_worthiness` (deterministic 0-100 score) and `audit_page` (whole-page rubric); this returns a binary cite/no-cite verdict tied to one query.",
+    "Either `url` or `text` must be provided. `target_query` is required.",
+  ].join("\n\n"),
+  {
+    url: z
+      .string()
+      .url()
+      .optional()
+      .describe("Public URL to fetch and test. Either this OR `text` is required."),
+    text: z
+      .string()
+      .optional()
+      .describe("Raw text/HTML to test directly. Either this OR `url` is required."),
+    target_query: z
+      .string()
+      .min(3)
+      .describe("The user query the engine is answering. Required. Example: `how to add JSON-LD to a Next.js app`."),
+    engine: z
+      .enum(["chatgpt", "claude", "perplexity", "google_ai_overviews", "any"])
+      .optional()
+      .default("any")
+      .describe("Which engine to simulate. `any` (default) uses a generic AI-search persona. Specific engines tune the cite criteria (e.g. perplexity favors statistic-dense excerpts; google_ai_overviews favors schema + freshness)."),
+    respect_robots: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("If true (default), respect robots.txt when fetching `url`. Ignored when `text` is used."),
+  },
+  async (input) => {
+    if (!input.url && !input.text) {
+      return toolError({ type: "invalid_url", message: "One of url or text is required" });
+    }
+    return wrapHandler(() =>
+      testCitation(input as Parameters<typeof testCitation>[0], undefined, undefined, server)
+    );
+  }
+);
+
+// --- Tool 15: diff_pages ---
 server.tool(
   "diff_pages",
   [
@@ -404,7 +459,7 @@ server.tool(
   async (input) => wrapHandler(() => diffPages(input))
 );
 
-// --- Tool 15: audit_site ---
+// --- Tool 16: audit_site ---
 server.tool(
   "audit_site",
   "Single-call site sweep: runs audit_page (homepage), check_robots, check_sitemap, and audit_schema in parallel and returns an overall grade plus top-5 fixes.",
@@ -412,7 +467,20 @@ server.tool(
   async (input) => wrapHandler(() => auditSite(input))
 );
 
-// --- Tool 16: save_audit_report ---
+// --- Tool 17: audit_sitemap ---
+server.tool(
+  "audit_sitemap",
+  [
+    "Site-wide content audit: discovers the sitemap, samples N URLs by deterministic uniform stride, runs audit_page on each, and returns score distribution + worst pages + most-common findings.",
+    "Read-only. One HTTP GET for sitemap discovery, optionally a few more for sitemap-index children, then `sample_size` × audit_page calls (each one HTTP GET + parsing). Polite throttling is enforced per host.",
+    "Deterministic — same domain + same sample_size returns the same set of URLs (uniform-stride sampling). Per-page scoring is rule-based; no LLM.",
+    "When to use: portfolio-level health check across a site (\"how does our content score on average?\"). Distinct from `audit_site` (homepage-only composite) and `check_sitemap` (validates sitemap.xml structure, not page content).",
+  ].join("\n\n"),
+  auditSitemapInputSchema.shape,
+  async (input) => wrapHandler(() => auditSitemap(input))
+);
+
+// --- Tool 18: save_audit_report ---
 server.tool(
   "save_audit_report",
   "Render an audit_page or audit_site result as a Markdown report and write it to a file under MCP_WORKSPACE_ROOT (defaults to cwd).",
