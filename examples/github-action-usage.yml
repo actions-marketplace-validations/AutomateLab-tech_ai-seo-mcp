@@ -1,0 +1,35 @@
+# Example consumer workflow for the ai-seo GitHub Action.
+# Drop this in `.github/workflows/ai-seo-audit.yml` of any docs/content repo.
+
+name: AI-SEO audit
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AI-SEO audit
+        id: ai-seo
+        uses: AutomateLab-tech/ai-seo@v0.3.0
+        with:
+          urls: "https://example.com,https://example.com/pricing"
+          min-score: "70"
+          respect-robots: "true"
+          report-path: "ai-seo-report.md"
+          fail-on-regression: "true"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-seo-report
+          path: ai-seo-report.md

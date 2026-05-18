@@ -4,6 +4,7 @@
 import { fetch as undiciFetch } from "undici";
 import { POLITE_FETCH } from "./config.js";
 import { checkRobotsAllowed, fetchRobotsTxt } from "./robots.js";
+import { cacheGet, cacheSet, type RenderMode } from "./cache.js";
 import type { ToolError } from "../types.js";
 
 // Per-call hostname -> last-request timestamp for inter-request delay tracking.
@@ -18,6 +19,10 @@ export interface FetchOptions {
   robotsCache?: Map<string, string>;
   /** Allow redirects up to this many hops. Default 5 (handled by fetch internally). */
   maxRedirects?: number;
+  /** Render mode for cache keying. Default "static". */
+  renderMode?: RenderMode;
+  /** Skip the in-memory fetch cache for this call. Robots/delays still apply. */
+  noCache?: boolean;
 }
 
 export interface FetchResult {
@@ -73,6 +78,16 @@ export async function politeFetch(
   const hostname = parsedUrl.hostname;
   const respectRobots =
     opts.respectRobots !== undefined ? opts.respectRobots : POLITE_FETCH.RESPECT_ROBOTS;
+  const renderMode: RenderMode = opts.renderMode ?? "static";
+
+  // Cache lookup. Cached entries bypass robots check, rate limiting, and the network call.
+  if (!opts.noCache) {
+    const hit = cacheGet(url, renderMode);
+    if (hit) {
+      console.error(`[fetch] cache hit ${url}`);
+      return hit;
+    }
+  }
 
   // Check inter-request delay
   if (opts.hostDelays) {
@@ -169,13 +184,19 @@ export async function politeFetch(
       headers[key] = value;
     });
 
-    return {
+    const fetchResult: FetchResult = {
       body,
       finalUrl: response.url || url,
       statusCode: response.status,
       headers,
       redirected: response.redirected,
     };
+
+    if (!opts.noCache) {
+      cacheSet(url, fetchResult, renderMode);
+    }
+
+    return fetchResult;
   } catch (err) {
     if (err instanceof ToolFetchError) throw err;
     const errObj = err as Error;

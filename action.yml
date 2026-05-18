@@ -1,0 +1,70 @@
+name: "AI-SEO audit"
+description: "Audit one or more URLs for AI-citation readiness. Fails the build if any score drops below threshold. Posts results as a workflow summary."
+author: "automatelab.tech"
+branding:
+  icon: "search"
+  color: "purple"
+
+inputs:
+  urls:
+    description: "Comma-separated list of URLs to audit."
+    required: true
+  min-score:
+    description: "Minimum score (0-100) per URL. Build fails if any URL scores below this and fail-on-regression is true."
+    required: false
+    default: "70"
+  respect-robots:
+    description: "Honour robots.txt when fetching. Set false for staging or sites you own."
+    required: false
+    default: "true"
+  report-path:
+    description: "Optional path (relative to the workspace) to write a Markdown report for the first URL. Useful for uploading as an artifact or posting to PRs."
+    required: false
+    default: ""
+  fail-on-regression:
+    description: "Exit non-zero if any URL scores below min-score."
+    required: false
+    default: "true"
+
+outputs:
+  min_score_observed:
+    description: "The lowest score observed across all audited URLs."
+  urls_audited:
+    description: "Number of URLs successfully audited."
+  report_path:
+    description: "Absolute path to the saved Markdown report, if report-path was provided."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install @automatelab/ai-seo-mcp
+      shell: bash
+      run: npm install --no-save --no-audit --no-fund @automatelab/ai-seo-mcp@^0.3.0
+
+    - name: Run audit
+      id: audit
+      shell: bash
+      env:
+        URLS: ${{ inputs.urls }}
+        MIN_SCORE: ${{ inputs.min-score }}
+        RESPECT_ROBOTS: ${{ inputs.respect-robots }}
+        REPORT_PATH: ${{ inputs.report-path }}
+        FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: |
+        ARGS=(--urls "$URLS" --min-score "$MIN_SCORE" --respect-robots "$RESPECT_ROBOTS" --fail-on-regression "$FAIL_ON_REGRESSION")
+        if [ -n "$REPORT_PATH" ]; then
+          ARGS+=(--report-path "$REPORT_PATH")
+        fi
+        node ./node_modules/@automatelab/ai-seo-mcp/dist/cli/audit-cli.js "${ARGS[@]}" | tee "$RUNNER_TEMP/ai-seo-audit.log"
+        {
+          echo "## AI-SEO audit"
+          echo ""
+          echo '```'
+          cat "$RUNNER_TEMP/ai-seo-audit.log"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

@@ -20,12 +20,14 @@ import { rewriteForAeo } from "./tools/rewrite-for-aeo.js";
 import { rewriteForGeo } from "./tools/rewrite-for-geo.js";
 import { extractEntities } from "./tools/extract-entities.js";
 import { diffPages, diffPagesInputSchema } from "./tools/diff-pages.js";
+import { auditSite, auditSiteInputSchema } from "./tools/audit-site.js";
+import { saveAuditReport, saveAuditReportInputSchema } from "./tools/save-audit-report.js";
 import type { ToolError } from "./types.js";
 import { ToolFetchError } from "./lib/fetch.js";
 
 const server = new McpServer({
   name: "@automatelab/ai-seo-mcp",
-  version: "0.1.2",
+  version: "0.3.0",
 });
 
 /** Serialize a ToolError to MCP error content. */
@@ -400,6 +402,256 @@ server.tool(
   ].join("\n\n"),
   diffPagesInputSchema.shape,
   async (input) => wrapHandler(() => diffPages(input))
+);
+
+// --- Tool 15: audit_site ---
+server.tool(
+  "audit_site",
+  "Single-call site sweep: runs audit_page (homepage), check_robots, check_sitemap, and audit_schema in parallel and returns an overall grade plus top-5 fixes.",
+  auditSiteInputSchema.shape,
+  async (input) => wrapHandler(() => auditSite(input))
+);
+
+// --- Tool 16: save_audit_report ---
+server.tool(
+  "save_audit_report",
+  "Render an audit_page or audit_site result as a Markdown report and write it to a file under MCP_WORKSPACE_ROOT (defaults to cwd).",
+  saveAuditReportInputSchema.shape,
+  async (input) => wrapHandler(() => saveAuditReport(input as Parameters<typeof saveAuditReport>[0]))
+);
+
+// --- Prompts: one-click entry points for AI-SEO workflows ---
+// Surfaced by hosts like Claude Desktop as suggested actions. Lowers activation cost
+// vs. asking users to pick among the 16-tool catalog.
+
+server.prompt(
+  "audit_my_homepage",
+  "Run a full AI-SEO audit of a site's homepage.",
+  { domain: z.string().describe("The site domain, e.g. example.com or https://example.com") },
+  ({ domain }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Call the \`audit_site\` tool with domain="${domain}" and respect_robots=true. ` +
+            `When the result returns, summarize the overall_grade, the top_5_fixes (highest-impact first), ` +
+            `and the content_quality from the underlying audit_page. Recommend the single most leveraged fix first.`,
+        },
+      },
+    ],
+  })
+);
+
+server.prompt(
+  "find_citation_blockers",
+  "Audit a URL and surface only the critical findings blocking AI citations.",
+  { url: z.string().url().describe("The URL to audit") },
+  ({ url }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Call \`audit_page\` with url="${url}" and respect_robots=true. ` +
+            `From the result, filter findings to severity="critical" only. ` +
+            `Group them by category and present a prioritized fix list. ` +
+            `Ignore warnings and info-level findings for this pass.`,
+        },
+      },
+    ],
+  })
+);
+
+server.prompt(
+  "generate_llms_txt_for_domain",
+  "Generate a valid llms.txt for a domain.",
+  { domain: z.string().describe("The site domain, e.g. example.com") },
+  ({ domain }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Call \`generate_llms_txt\` with domain="${domain}", max_pages=50, include_full=false. ` +
+            `Return the generated llms.txt verbatim in a code block, then summarize how many pages were indexed.`,
+        },
+      },
+    ],
+  })
+);
+
+server.prompt(
+  "check_ai_crawler_access",
+  "Report which AI training and search crawlers can access a domain.",
+  { domain: z.string().describe("The site domain, e.g. example.com") },
+  ({ domain }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Call \`check_robots\` with domain="${domain}". ` +
+            `From the result, build a table grouped by training_crawlers / search_crawlers / user_triggered, ` +
+            `with one row per crawler and an allowed/blocked verdict. ` +
+            `Highlight any AI search crawlers that are blocked - those silently kill citation surface.`,
+        },
+      },
+    ],
+  })
+);
+
+server.prompt(
+  "score_my_citation_worthiness",
+  "Score how citable a URL is for AI engines and recommend improvements.",
+  {
+    url: z.string().url().describe("The URL to score"),
+    target_query: z.string().describe("The query the page should be cited for"),
+  },
+  ({ url, target_query }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Call \`score_citation_worthiness\` with url="${url}", target_query="${target_query}", respect_robots=true. ` +
+            `Present overall_score and per-engine scores (Perplexity, ChatGPT, Google AI Overviews, Claude). ` +
+            `Then suggest the 3 most impactful structural changes (BLUF opening, FAQ blocks, entity density) to lift the lowest score.`,
+        },
+      },
+    ],
+  })
+);
+
+// --- Resources: browsable reference data ---
+// Hosts can read these on demand to ground answers about AI-SEO without a tool call.
+
+const SIGNALS_DOC = `# AI-citation signals
+
+The 13 signals AI assistants weigh when deciding what to cite.
+
+## 1. JSON-LD structured data
+Article / FAQPage / HowTo schema. With Person/Organization author nodes carrying \`sameAs\` links.
+Example:
+\`\`\`json
+{"@context":"https://schema.org","@type":"Article","author":{"@type":"Person","name":"Jane","sameAs":["https://linkedin.com/in/jane"]}}
+\`\`\`
+
+## 2. FAQ structure
+H3 headings ending in "?" with concise answer paragraphs. FAQPage JSON-LD doubles the signal.
+
+## 3. BLUF (bottom line up front)
+First 1-2 sentences answer the query directly. No throat-clearing.
+
+## 4. Statistic density
+2-3+ specific numbers per 500 words. Source-attributed where possible.
+
+## 5. Named entities
+People, products, places, organizations - named explicitly (not "this product" / "they").
+
+## 6. Entity links
+External links to authoritative domains: wikipedia.org, .gov, linkedin.com, crunchbase.com.
+
+## 7. Comparison tables
+Side-by-side product/option tables. AI engines extract these directly.
+
+## 8. Ordered lists
+Numbered step-by-step. Especially "how to X" content.
+
+## 9. Schema author identity
+Author as a Person node with profile URL, not a plain string.
+
+## 10. Freshness
+\`dateModified\` within 90 days. Stale content is downranked aggressively.
+
+## 11. Canonical hygiene
+Self-referencing canonical, no trailing-slash redirects, \`og:url\` matches canonical.
+
+## 12. AI crawler allowance
+robots.txt allows OAI-SearchBot, PerplexityBot, Claude-SearchBot. Blocking training-only crawlers (GPTBot, ClaudeBot) is fine; blocking search crawlers kills citation surface.
+
+## 13. Sitemap freshness
+XML sitemap present, lastmod >80% coverage, listed in robots.txt.
+
+Use \`audit_page\` to score a URL across all 13 signals at once.
+`;
+
+const CRAWLERS_DOC = `# AI crawlers reference
+
+The user-agents AI assistants use, what they do, and how to allow / block them in robots.txt.
+
+## Training crawlers
+These scrape content to train future model weights. Blocking them does not affect live AI citations.
+
+- **GPTBot** - OpenAI training crawler. \`User-agent: GPTBot\`
+- **ClaudeBot** - Anthropic training crawler. \`User-agent: ClaudeBot\`
+- **CCBot** - Common Crawl. Powers many downstream models. \`User-agent: CCBot\`
+- **Meta-ExternalAgent** - Meta training crawler. \`User-agent: Meta-ExternalAgent\`
+- **Amazonbot** - Amazon training crawler. \`User-agent: Amazonbot\`
+
+## Search crawlers
+These power live AI search / answer engines. Blocking these directly suppresses your visibility in AI answers.
+
+- **OAI-SearchBot** - ChatGPT search index. \`User-agent: OAI-SearchBot\`
+- **Claude-SearchBot** - Claude live search. \`User-agent: Claude-SearchBot\`
+- **PerplexityBot** - Perplexity search index. \`User-agent: PerplexityBot\`
+- **Bingbot** - Bing, also powers Copilot. \`User-agent: Bingbot\`
+- **DuckAssistBot** - DuckDuckGo AI assist. \`User-agent: DuckAssistBot\`
+
+## User-triggered fetchers
+On-demand fetches when a user shares a URL in chat. Blocking these breaks user-pasted links.
+
+- **ChatGPT-User** - ChatGPT browsing on user request. \`User-agent: ChatGPT-User\`
+- **Claude-User** - Claude browsing on user request. \`User-agent: Claude-User\`
+- **Google-Agent** - Google Search agent fetches. \`User-agent: Google-Agent\`
+
+## Robots-token-only signals
+These are not crawlers - they are tokens that modify whether the existing Googlebot / Applebot crawl is used for AI grounding.
+
+- **Google-Extended** - opts out of Google AI training/grounding. \`User-agent: Google-Extended\`
+- **Applebot-Extended** - opts out of Apple AI training. \`User-agent: Applebot-Extended\`
+
+## Recommended posture
+For most sites that want AI citation surface:
+\`\`\`
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: *
+Allow: /
+\`\`\`
+(Blocks training, allows everything else - including search crawlers.)
+
+Use \`check_robots\` to see your current posture per crawler.
+`;
+
+server.resource(
+  "ai-citation-signals",
+  "ai-citation://signals",
+  { mimeType: "text/markdown", description: "The 13 signals AI assistants use to decide what to cite, with examples." },
+  async (uri) => ({
+    contents: [{ uri: uri.href, mimeType: "text/markdown", text: SIGNALS_DOC }],
+  })
+);
+
+server.resource(
+  "ai-crawlers",
+  "ai-citation://crawlers",
+  { mimeType: "text/markdown", description: "Catalog of AI training, search, and user-triggered crawlers with robots.txt syntax." },
+  async (uri) => ({
+    contents: [{ uri: uri.href, mimeType: "text/markdown", text: CRAWLERS_DOC }],
+  })
 );
 
 // --- Start server ---

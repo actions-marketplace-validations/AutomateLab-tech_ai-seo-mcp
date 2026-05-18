@@ -1,8 +1,11 @@
-// Smoke tests for all 12 AI-SEO MCP tools.
+// Smoke tests for all AI-SEO MCP tools.
 // Network tests are gated on CI=true to avoid network calls in CI.
 // Each test exercises the tool against the spec-defined test targets.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Tools under test (using compiled dist via tsx or direct src imports)
 import { auditPage } from "../src/tools/audit-page.js";
@@ -17,9 +20,96 @@ import { validateLlmsTxt } from "../src/tools/validate-llms-txt.js";
 import { scoreCitationWorthiness } from "../src/tools/score-citation-worthiness.js";
 import { extractEntities } from "../src/tools/extract-entities.js";
 import { diffPages } from "../src/tools/diff-pages.js";
+import { auditSite } from "../src/tools/audit-site.js";
+import { saveAuditReport } from "../src/tools/save-audit-report.js";
+import { cacheClear, cacheSet, cacheGet, cacheSize } from "../src/lib/cache.js";
 // rewrite tools require LLM host - excluded from automated smoke tests
 
 const skipNet = process.env["CI"] === "true";
+
+// ============ v0.3 additions (no network) ============
+
+describe("fetch cache (LRU)", () => {
+  beforeEach(() => cacheClear());
+
+  it("returns null on miss, hits on subsequent get", () => {
+    expect(cacheGet("https://example.com/a")).toBeNull();
+    cacheSet("https://example.com/a", {
+      body: "ok", finalUrl: "https://example.com/a", statusCode: 200, headers: {}, redirected: false,
+    });
+    const hit = cacheGet("https://example.com/a");
+    expect(hit?.body).toBe("ok");
+  });
+
+  it("keys on render mode so static and headless are separate entries", () => {
+    cacheSet("https://example.com/a", {
+      body: "static", finalUrl: "https://example.com/a", statusCode: 200, headers: {}, redirected: false,
+    }, "static");
+    expect(cacheGet("https://example.com/a", "headless")).toBeNull();
+    expect(cacheGet("https://example.com/a", "static")?.body).toBe("static");
+  });
+
+  it("evicts oldest entries past FETCH_CACHE_MAX_ENTRIES", () => {
+    // Default cap is 50; insert 55 and check cap holds.
+    for (let i = 0; i < 55; i++) {
+      cacheSet(`https://example.com/${i}`, {
+        body: `b${i}`, finalUrl: `https://example.com/${i}`, statusCode: 200, headers: {}, redirected: false,
+      });
+    }
+    expect(cacheSize()).toBeLessThanOrEqual(50);
+    // Oldest entries should be gone.
+    expect(cacheGet("https://example.com/0")).toBeNull();
+    // Most-recent should still be present.
+    expect(cacheGet("https://example.com/54")?.body).toBe("b54");
+  });
+});
+
+describe("save_audit_report", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "ai-seo-report-"));
+    process.env["MCP_WORKSPACE_ROOT"] = tmp;
+  });
+
+  it("writes a markdown report for an audit_page result", async () => {
+    const fake = {
+      url: "https://example.com",
+      fetched_at: "2026-05-18T00:00:00Z",
+      findings: [
+        { severity: "critical", category: "schema", where: "Article", message: "no JSON-LD", fix: "add Article schema", estimated_impact: "high" },
+      ],
+      score: 42,
+      grade: "F",
+      dimension_scores: { schema: 0, robots: 70, technical: 60, freshness: 50, structure: 30, authority: 40, entity_density: 50, sitemap: 50 },
+      content_quality: "static_html",
+    };
+    const result = await saveAuditReport({
+      audit_result: fake,
+      path: "report.md",
+      overwrite: true,
+    });
+    expect(result.format).toBe("audit_page");
+    expect(result.bytes_written).toBeGreaterThan(0);
+    const content = readFileSync(result.saved_to, "utf8");
+    expect(content).toMatch(/# AI-SEO audit:/);
+    expect(content).toMatch(/no JSON-LD/);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("refuses paths that escape the workspace root", async () => {
+    await expect(
+      saveAuditReport({ audit_result: { findings: [], dimension_scores: {}, grade: "A" } as never, path: "../escape.md", overwrite: true })
+    ).rejects.toThrow(/escapes MCP_WORKSPACE_ROOT/);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("rejects payloads that aren't an audit result", async () => {
+    await expect(
+      saveAuditReport({ audit_result: { random: "thing" }, path: "report.md", overwrite: true })
+    ).rejects.toThrow(/does not look like/);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+});
 
 describe("audit_schema - inline JSON", () => {
   it("detects http:// context and string author", async () => {
@@ -255,6 +345,16 @@ describe("audit_canonical - automatelab.tech (network)", () => {
     });
     expect(result.url).toBe("https://automatelab.tech");
     expect(result.findings).toBeInstanceOf(Array);
+  });
+});
+
+describe("audit_site - automatelab.tech (network)", () => {
+  it.skipIf(skipNet)("returns overall_grade and top_5_fixes", async () => {
+    const result = await auditSite({ domain: "automatelab.tech", respect_robots: false });
+    expect(result.domain).toBe("automatelab.tech");
+    expect(["A", "B", "C", "D", "F"]).toContain(result.overall_grade);
+    expect(result.top_5_fixes.length).toBeLessThanOrEqual(5);
+    expect(result.parts).toHaveProperty("audit_page");
   });
 });
 

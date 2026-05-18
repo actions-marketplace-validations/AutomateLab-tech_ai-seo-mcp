@@ -49,6 +49,8 @@ export interface CitationVerdict {
   one_line_summary: string;
 }
 
+export type ContentQuality = "static_html" | "ssr_likely" | "spa_empty";
+
 export interface AuditPageResult extends AuditResult {
   citation_verdict: CitationVerdict;
   dimension_scores: {
@@ -61,8 +63,32 @@ export interface AuditPageResult extends AuditResult {
     entity_density: number;
     sitemap: number;
   };
+  /**
+   * Heuristic classification of the fetched HTML's content readiness.
+   * - `static_html`: body text >= 500 chars; audit is reliable.
+   * - `ssr_likely`: body text < 500 chars but few scripts; small/edge page or stub.
+   * - `spa_empty`: body text < 500 chars AND >5 script tags; results are degraded — re-run with render: 'headless' once available.
+   */
+  content_quality: ContentQuality;
   raw_html?: string;
   report_html?: string;
+}
+
+const SPA_BODY_TEXT_MIN = 500;
+const SPA_SCRIPT_TAG_MIN = 5;
+
+function detectContentQuality(bodyText: string, scriptCount: number): ContentQuality {
+  const textLen = bodyText.trim().length;
+  if (textLen >= SPA_BODY_TEXT_MIN) return "static_html";
+  if (scriptCount > SPA_SCRIPT_TAG_MIN) return "spa_empty";
+  return "ssr_likely";
+}
+
+function countScriptTags(html: string): number {
+  let n = 0;
+  const re = /<script\b/gi;
+  while (re.exec(html) !== null) n++;
+  return n;
 }
 
 export async function auditPage(input: AuditPageInput): Promise<AuditPageResult> {
@@ -269,6 +295,19 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     sitemap: sitemapScore,
   };
 
+  const scriptCount = countScriptTags(result.body);
+  const contentQuality = detectContentQuality(body.bodyText, scriptCount);
+  if (contentQuality === "spa_empty") {
+    allFindings.push({
+      severity: "critical",
+      category: "technical",
+      where: "<body>",
+      message: "Page appears to be a JS-rendered SPA (low body text, many script tags); audit results are likely incomplete.",
+      fix: "Re-run audit_page with render: 'headless' (when available), or serve SSR/prerendered HTML so AI crawlers without JS see real content.",
+      estimated_impact: "high",
+    });
+  }
+
   const score = computeWeightedScore(dimensionScores);
   const grade = deriveGrade(score);
 
@@ -317,6 +356,7 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     score,
     grade,
     dimension_scores: dimensionScores,
+    content_quality: contentQuality,
   };
 
   if (input.include_raw_html) {
