@@ -10,9 +10,9 @@ import type { AuditPageResult } from "./audit-page.js";
 import type { AuditSiteResult } from "./audit-site.js";
 
 export const saveAuditReportInputSchema = z.object({
-  audit_result: z.unknown().describe("The return value of audit_page or audit_site"),
-  path: z.string().min(1).describe("Target file path. May be relative to MCP_WORKSPACE_ROOT (or cwd)."),
-  overwrite: z.boolean().optional().default(true),
+  audit_result: z.unknown().describe("The return value of `audit.page` or `audit.site`. Pass the structured result verbatim - the tool detects which shape it is and renders the matching Markdown report."),
+  path: z.string().min(1).describe("Target file path. May be relative to MCP_WORKSPACE_ROOT (or cwd if unset). Paths that escape the workspace root are rejected."),
+  overwrite: z.boolean().optional().default(true).describe("If true (default), overwrite an existing file. If false, the write fails when the target already exists."),
 });
 
 export type SaveAuditReportInput = z.infer<typeof saveAuditReportInputSchema>;

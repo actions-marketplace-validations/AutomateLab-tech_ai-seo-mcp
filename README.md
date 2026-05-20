@@ -110,24 +110,30 @@ Then call `audit_page` with `render: "headless"`. Use static for everything else
 ---
 
 <details>
-<summary>All 14 tools</summary>
+<summary>All 16 tools</summary>
 
 | Tool | Purpose |
 |------|---------|
-| `audit_page` | Composite AI-SEO audit with 8-dimension scoring (schema, technical, structure, robots, freshness, authority, entity density, sitemap). |
-| `audit_schema` | Validate JSON-LD against Schema.org rules and AI-citation best practice. Flags deprecated patterns. |
-| `audit_canonical` | Canonical link integrity, trailing-slash hygiene, `og:url` consistency. |
-| `check_robots` | Parse `robots.txt` and report per-crawler allow/disallow for all known AI crawlers. Surfaces the GPTBot-blocked-but-OAI-SearchBot-allowed trap. |
-| `check_sitemap` | Validate XML sitemaps: presence, URL count, `lastmod` freshness, image/video extensions. |
-| `check_technical` | HEAD tag audit: canonical, OpenGraph, Twitter Card, hreflang, HTTPS, noindex, title hygiene. |
-| `score_ai_overview_eligibility` | Score a page's probability of appearing in Google AI Overviews using current correlation factors. |
-| `generate_llms_txt` | Generate `llms.txt` and optionally `llms-full.txt` from a domain's sitemap. |
-| `validate_llms_txt` | Lint an existing `llms.txt` for spec compliance and broken links. |
-| `score_citation_worthiness` | Score how citable a page or text block is for Perplexity, ChatGPT, Google AI Overviews, and Claude. |
-| `rewrite_for_aeo` | Rewrite content for Answer Engine Optimization (BLUF structure, FAQ format, schema additions). |
-| `rewrite_for_geo` | Rewrite content for Generative Engine Optimization (entity definitions, comparison tables, synthesis-ready structure). |
-| `extract_entities` | Extract named entities, `sameAs` links, and citation-density score from a page's content and structured data. |
-| `diff_pages` | Compare two URLs for AI citation-worthiness: side-by-side dimension scores, gap analysis, and prioritized fix recommendations for url_a. |
+| `audit.page` | Composite AI-SEO audit with 8-dimension scoring (schema, technical, structure, robots, freshness, authority, entity density, sitemap). |
+| `audit.schema` | Validate JSON-LD against Schema.org rules and AI-citation best practice. Flags deprecated patterns. |
+| `audit.canonical` | Canonical link integrity, trailing-slash hygiene, `og:url` consistency. |
+| `audit.site` | Single-call site sweep: `audit.page` + `check.robots` + `check.sitemap` + `audit.schema` with overall grade and top-5 fixes. |
+| `audit.sitemap` | Site-wide content audit: stride-sample N URLs from the sitemap, run `audit.page` on each, return distribution + worst pages + top findings. |
+| `check.robots` | Parse `robots.txt` and report per-crawler allow/disallow for all known AI crawlers. Surfaces the GPTBot-blocked-but-OAI-SearchBot-allowed trap. |
+| `check.sitemap` | Validate XML sitemaps: presence, URL count, `lastmod` freshness, image/video extensions. |
+| `check.technical` | HEAD tag audit: canonical, OpenGraph, Twitter Card, hreflang, HTTPS, noindex, title hygiene. |
+| `score.ai_overview_eligibility` | Score a page's probability of appearing in Google AI Overviews using current correlation factors. |
+| `score.citation_worthiness` | Score how citable a page or text block is for Perplexity, ChatGPT, Google AI Overviews, and Claude. |
+| `score.test_citation` | Simulate "would an AI engine cite this for this query?" via MCP sampling, with deterministic heuristic fallback. |
+| `llms_txt.generate` | Generate `llms.txt` and optionally `llms-full.txt` from a domain's sitemap. |
+| `llms_txt.validate` | Lint an existing `llms.txt` for spec compliance and broken links. |
+| `rewrite.aeo` | Rewrite content for Answer Engine Optimization (BLUF structure, FAQ format, schema additions). |
+| `rewrite.geo` | Rewrite content for Generative Engine Optimization (entity definitions, comparison tables, synthesis-ready structure). |
+| `extract.entities` | Extract named entities, `sameAs` links, and citation-density score from a page's content and structured data. |
+| `diff.pages` | Compare two URLs for AI citation-worthiness: side-by-side dimension scores, gap analysis, and prioritized fix recommendations for url_a. |
+| `report.save` | Render an `audit.page` / `audit.site` result as a Markdown report and write it to disk under `MCP_WORKSPACE_ROOT`. |
+
+> **v0.4.0** renamed tools from flat `snake_case` to dot-notation (`audit.page`, `check.robots`, …) for a navigable hierarchy. Update any saved invocations.
 
 Environment variables: see [ENV.md](./ENV.md).
 

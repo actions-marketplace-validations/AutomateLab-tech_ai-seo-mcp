@@ -11,8 +11,15 @@ import { deriveGrade } from "../lib/score.js";
 import type { Finding } from "../types.js";
 
 export const auditSiteInputSchema = z.object({
-  domain: z.string().min(3),
-  respect_robots: z.boolean().optional().default(true),
+  domain: z
+    .string()
+    .min(3)
+    .describe("Hostname or origin to audit. Examples: `example.com`, `https://example.com`. The tool resolves the homepage and runs audit_page + check_robots + check_sitemap + audit_schema in parallel against it, then returns an overall grade plus top-5 fixes. Issues several HTTP GETs against the domain."),
+  respect_robots: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("If true (default), respect robots.txt before fetching the homepage. Set false ONLY to audit a site you own that has temporarily blocked crawlers."),
 });
 
 export type AuditSiteInput = z.infer<typeof auditSiteInputSchema>;
