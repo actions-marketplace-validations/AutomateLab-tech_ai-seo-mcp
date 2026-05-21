@@ -26,13 +26,13 @@ Works inside Claude, Cursor, Windsurf, Codex, and any MCP client that speaks std
 
 ## Run an audit. Get a list of citation-blockers, ranked.
 
-> **You:** Run an AI-SEO audit on `https://automatelab.tech/how-to-connect-zapier-to-notion`.
+> **You:** Run an AI-SEO audit on `https://automatelab.tech/launching-the-ai-seo-mcp/`.
 
 Result (truncated):
 
 ```json
 {
-  "url": "https://automatelab.tech/how-to-connect-zapier-to-notion",
+  "url": "https://automatelab.tech/launching-the-ai-seo-mcp/",
   "score": 61,
   "grade": "C",
   "dimension_scores": {
