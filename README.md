@@ -110,7 +110,7 @@ Then call `audit_page` with `render: "headless"`. Use static for everything else
 ---
 
 <details>
-<summary>All 16 tools</summary>
+<summary>MCP tool surface (18 tools)</summary>
 
 | Tool | Purpose |
 |------|---------|

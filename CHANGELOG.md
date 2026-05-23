@@ -4,6 +4,41 @@ All notable changes to `@automatelab/ai-seo-mcp` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-05-23
+
+### Added
+
+- **`icon.svg`** at repo root — text wordmark picked up automatically by Smithery and other catalog scanners.
+- **`smithery.yaml`** with `commandFunction` and `configSchema` so Smithery's probe can start the server (without this the listing shows "No capabilities found").
+
+### Changed
+
+- README "All 16 tools" section renamed to **"MCP tool surface (18 tools)"** — exact tool inventory + naming tree, scannable without launching the server.
+
+## [0.4.0] - 2026-05-20
+
+### Changed
+
+- **Breaking: tool rename to dot-notation.** All tools migrated from flat snake_case (`audit_page`, `check_robots`, …) to a navigable dot-notation tree (`audit.page`, `check.robots`, …). Categories: `audit.*`, `check.*`, `score.*`, `llms_txt.*`, `rewrite.*`, `extract.*`, `diff.*`, `report.*`. Update any saved invocations.
+
+### Added
+
+- **`outputSchema` (Zod) on every tool** — callers can type-check responses; hosts can reason about return shape before calling. Returns now also surface `structuredContent` alongside the legacy `content` text block.
+- **MCP `annotations` on every tool** — `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. Hosts use these to decide whether to auto-approve a call, prompt the user, or block.
+- **`.describe()` on every input parameter** that lacked one (`audit.site`, `report.save`) — input schemas are now fully self-documenting.
+
+### Migration
+
+- `server.tool()` → `server.registerTool()` throughout.
+- Rename map (use sed/IDE find-replace on any saved configs):
+  `audit_page → audit.page`, `audit_schema → audit.schema`, `audit_canonical → audit.canonical`,
+  `audit_site → audit.site`, `audit_sitemap → audit.sitemap`,
+  `check_robots → check.robots`, `check_sitemap → check.sitemap`, `check_technical → check.technical`,
+  `score_ai_overview_eligibility → score.ai_overview_eligibility`, `score_citation_worthiness → score.citation_worthiness`, `test_citation → score.test_citation`,
+  `generate_llms_txt → llms_txt.generate`, `validate_llms_txt → llms_txt.validate`,
+  `rewrite_for_aeo → rewrite.aeo`, `rewrite_for_geo → rewrite.geo`,
+  `extract_entities → extract.entities`, `diff_pages → diff.pages`, `save_audit_report → report.save`.
+
 ## [0.3.4] - 2026-05-18
 
 ### Added

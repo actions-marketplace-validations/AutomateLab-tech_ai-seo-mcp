@@ -1,6 +1,6 @@
 {
   "name": "@automatelab/ai-seo-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "mcpName": "io.github.AutomateLab-tech/ai-seo-mcp",
   "description": "AI Citation Toolkit - audit, score, and rewrite web pages for AI-citation eligibility. AEO/GEO/LLM visibility for any MCP client.",
   "license": "MIT",

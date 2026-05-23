@@ -48,7 +48,7 @@ import { ToolFetchError } from "./lib/fetch.js";
 
 const server = new McpServer({
   name: "@automatelab/ai-seo-mcp",
-  version: "0.4.0",
+  version: "0.4.1",
 });
 
 type ToolResponse = {
