@@ -51,6 +51,7 @@
     "src/lib/crawlers.json",
     "src/lib/schema-types.json",
     "action.yml",
+    "smithery.yaml",
     "README.md",
     "LICENSE"
   ],
