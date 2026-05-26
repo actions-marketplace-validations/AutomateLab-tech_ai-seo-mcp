@@ -4,7 +4,15 @@
 import { z } from "zod";
 import { politeFetch, ToolFetchError, type HostDelayMap } from "../lib/fetch.js";
 import type { RenderMode } from "../lib/cache.js";
-import { parseHead, parseBody } from "../lib/html.js";
+import {
+  parseHead,
+  parseBody,
+  analyzeImages,
+  analyzeAnchors,
+  analyzeHeadingHierarchy,
+  analyzeReadability,
+  titleH1Overlap,
+} from "../lib/html.js";
 import { parseJsonLd, getAllSchemaTypes, validateJsonLd } from "../lib/schema.js";
 import { checkTechnical } from "./check-technical.js";
 import { auditSchema } from "./audit-schema.js";
@@ -207,18 +215,40 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     });
   }
 
+  // --- Body-level signals (v0.5): alt coverage, anchors, heading hierarchy, readability ---
+  const imageStats = analyzeImages(result.body);
+  const anchorStats = analyzeAnchors(result.body);
+  const headingHierarchy = analyzeHeadingHierarchy(result.body);
+  const readability = analyzeReadability(body.paragraphs);
+
   // --- Structure dimension ---
   const hasFaq = foundTypes.includes("FAQPage") || body.h3s.some((h) => h.endsWith("?"));
   const hasHowTo = foundTypes.includes("HowTo");
   const hasOrderedList = body.orderedLists > 0;
   const hasTable = body.tables > 0;
   const goodHeadings = body.h2s.length >= 2;
-  let structureScore = 20;
-  if (hasFaq) structureScore += 30;
-  if (hasHowTo) structureScore += 15;
-  if (hasOrderedList) structureScore += 15;
-  if (hasTable) structureScore += 10;
+  const cleanHierarchy =
+    headingHierarchy.skips.length === 0 && headingHierarchy.h1Count === 1;
+  const altCoverage = imageStats.total === 0
+    ? 1
+    : imageStats.withMeaningfulAlt / imageStats.total;
+  const goodAlts = altCoverage >= 0.7;
+  const goodAnchors = anchorStats.total === 0
+    ? true
+    : anchorStats.lowQuality / anchorStats.total <= 0.1;
+  const goodReadability =
+    readability.totalWords > 0 && readability.longParagraphCount === 0;
+
+  let structureScore = 10;
+  if (hasFaq) structureScore += 25;
+  if (hasHowTo) structureScore += 12;
+  if (hasOrderedList) structureScore += 10;
+  if (hasTable) structureScore += 8;
   if (goodHeadings) structureScore += 10;
+  if (cleanHierarchy) structureScore += 10;
+  if (goodAlts) structureScore += 8;
+  if (goodAnchors) structureScore += 7;
+  if (goodReadability) structureScore += 10;
   structureScore = Math.min(100, structureScore);
 
   if (!hasFaq) {
@@ -230,6 +260,104 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
       fix: "Add FAQ H3 headings ending in '?' with answer paragraphs, and a FAQPage JSON-LD block.",
       estimated_impact: "high",
     });
+  }
+
+  // Title vs H1 overlap
+  const overlap = titleH1Overlap(head.title, body.h1s[0] ?? null);
+  if (overlap !== null && overlap < 0.5) {
+    allFindings.push({
+      severity: "warning",
+      category: "technical",
+      where: "<title> vs <h1>",
+      message: `Title and H1 share little overlap (${Math.round(overlap * 100)}%) - AI engines weigh the two together.`,
+      fix: "Rewrite the H1 or <title> so both communicate the same primary topic. Allow brand/separator differences only.",
+      estimated_impact: "medium",
+    });
+  }
+
+  // Heading hierarchy
+  if (headingHierarchy.h1Count === 0) {
+    allFindings.push({
+      severity: "critical",
+      category: "structure",
+      where: "<body>",
+      message: "Page has no H1 heading.",
+      fix: "Add a single H1 that names the page topic; AI assistants use H1 as the canonical document title.",
+      estimated_impact: "high",
+    });
+  } else if (headingHierarchy.h1Count > 1) {
+    allFindings.push({
+      severity: "warning",
+      category: "structure",
+      where: "<body>",
+      message: `Page has ${headingHierarchy.h1Count} H1 headings (should be exactly one).`,
+      fix: "Keep one H1 (the page title) and demote duplicates to H2.",
+      estimated_impact: "medium",
+    });
+  }
+  if (headingHierarchy.skips.length > 0) {
+    const s = headingHierarchy.skips[0];
+    allFindings.push({
+      severity: "warning",
+      category: "structure",
+      where: "<body>",
+      message: `Heading hierarchy skips levels (${headingHierarchy.skips.length} skip${headingHierarchy.skips.length === 1 ? "" : "s"}; e.g. h${s.from} to h${s.to} near "${s.nearText}").`,
+      fix: "Use heading levels in order (h1 -> h2 -> h3) so AI parsers and assistive tech can follow the outline.",
+      estimated_impact: "low",
+    });
+  }
+
+  // Image alt coverage
+  if (imageStats.total > 0) {
+    if (altCoverage < 0.5) {
+      allFindings.push({
+        severity: "warning",
+        category: "structure",
+        where: "<img>",
+        message: `Only ${Math.round(altCoverage * 100)}% of images have meaningful alt text (${imageStats.withMeaningfulAlt}/${imageStats.total}).`,
+        fix: 'Add descriptive alt="..." to content images. Use alt="" only for purely decorative images.',
+        estimated_impact: "medium",
+      });
+    } else if (altCoverage < 0.8) {
+      allFindings.push({
+        severity: "info",
+        category: "structure",
+        where: "<img>",
+        message: `${Math.round(altCoverage * 100)}% of images have meaningful alt text (${imageStats.withMeaningfulAlt}/${imageStats.total}).`,
+        fix: "Lift alt coverage above 80% to give vision-impaired and AI crawlers full image context.",
+      });
+    }
+  }
+
+  // Anchor text quality
+  if (anchorStats.total > 0) {
+    const badPct = anchorStats.lowQuality / anchorStats.total;
+    if (anchorStats.lowQuality >= 3 || badPct > 0.15) {
+      const sample = anchorStats.lowQualitySamples
+        .map((s) => `"${s.text}"`)
+        .slice(0, 3)
+        .join(", ");
+      allFindings.push({
+        severity: "info",
+        category: "structure",
+        where: "<a>",
+        message: `${anchorStats.lowQuality} anchor${anchorStats.lowQuality === 1 ? " uses" : "s use"} generic text (${sample}).`,
+        fix: "Replace generic anchors with descriptive phrases that name the destination (e.g. 'AI-SEO checker' instead of 'click here').",
+      });
+    }
+  }
+
+  // Readability
+  if (readability.totalWords > 100) {
+    if (readability.longParagraphCount >= 2 || readability.longSentenceCount >= 5) {
+      allFindings.push({
+        severity: "info",
+        category: "structure",
+        where: "page-level",
+        message: `Long content: ${readability.longSentenceCount} sentence(s) > 30 words, ${readability.longParagraphCount} paragraph(s) > 120 words (avg ${readability.avgWordsPerSentence} words/sentence).`,
+        fix: "Break long paragraphs into 2-4 sentence chunks and split long sentences. AI assistants cite shorter passages more reliably.",
+      });
+    }
   }
 
   // --- Authority dimension ---

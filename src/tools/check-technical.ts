@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { politeFetch, ToolFetchError, type HostDelayMap } from "../lib/fetch.js";
 import type { RenderMode } from "../lib/cache.js";
-import { parseHead, levenshtein } from "../lib/html.js";
+import { parseHead, levenshtein, analyzeMixedContent } from "../lib/html.js";
 import type { Finding } from "../types.js";
 
 export const checkTechnicalInputSchema = z.object({
@@ -52,6 +52,17 @@ export interface TechnicalResult {
   meta_description: {
     present: boolean;
     length: number;
+  };
+  response_headers: {
+    hsts: string | null;
+    x_content_type_options: string | null;
+    referrer_policy: string | null;
+    content_security_policy: string | null;
+    cache_control: string | null;
+  };
+  mixed_content: {
+    count: number;
+    samples: string[];
   };
   findings: Finding[];
 }
@@ -219,6 +230,57 @@ export async function checkTechnical(
     });
   }
 
+  // Response header hygiene
+  const hsts = result.headers["strict-transport-security"] ?? null;
+  const xContentTypeOptions = result.headers["x-content-type-options"] ?? null;
+  const referrerPolicy = result.headers["referrer-policy"] ?? null;
+  const csp = result.headers["content-security-policy"] ?? null;
+  const cacheControl = result.headers["cache-control"] ?? null;
+
+  if (https && !hsts) {
+    findings.push({
+      severity: "warning",
+      category: "technical",
+      where: "Strict-Transport-Security header",
+      message: "HSTS header is missing - browsers can be downgraded to http on first visit.",
+      fix: "Send Strict-Transport-Security: max-age=63072000; includeSubDomains; preload from the server or CDN edge.",
+      estimated_impact: "low",
+    });
+  }
+  if (!xContentTypeOptions || !xContentTypeOptions.toLowerCase().includes("nosniff")) {
+    findings.push({
+      severity: "info",
+      category: "technical",
+      where: "X-Content-Type-Options header",
+      message: "X-Content-Type-Options: nosniff header is absent.",
+      fix: "Add X-Content-Type-Options: nosniff to block MIME-sniffing attacks.",
+    });
+  }
+  if (!referrerPolicy) {
+    findings.push({
+      severity: "info",
+      category: "technical",
+      where: "Referrer-Policy header",
+      message: "Referrer-Policy header is absent.",
+      fix: "Set Referrer-Policy (e.g. strict-origin-when-cross-origin) to control referrer leakage.",
+    });
+  }
+
+  // Mixed content scan (http:// resources on an https page)
+  const mixed = https
+    ? analyzeMixedContent(result.body)
+    : { total: 0, samples: [] };
+  if (mixed.total > 0) {
+    findings.push({
+      severity: "critical",
+      category: "technical",
+      where: "page-level",
+      message: `Mixed content: ${mixed.total} http:// resource${mixed.total === 1 ? "" : "s"} on an https page (e.g. ${mixed.samples[0] ?? ""}).`,
+      fix: "Update all <img>, <script>, and <link> URLs to https:// or protocol-relative //. Mixed content is blocked by browsers and signals neglect.",
+      estimated_impact: "high",
+    });
+  }
+
   // Title/OG match
   const titleOgMatch =
     !head.title || !head.ogTitle
@@ -267,6 +329,17 @@ export async function checkTechnical(
     meta_description: {
       present: !!head.metaDescription,
       length: metaDescLen,
+    },
+    response_headers: {
+      hsts,
+      x_content_type_options: xContentTypeOptions,
+      referrer_policy: referrerPolicy,
+      content_security_policy: csp,
+      cache_control: cacheControl,
+    },
+    mixed_content: {
+      count: mixed.total,
+      samples: mixed.samples,
     },
     findings,
   };
