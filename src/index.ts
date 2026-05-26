@@ -674,8 +674,12 @@ server.registerTool(
   "audit.site",
   {
     title: "Audit site (homepage + robots + sitemap + schema)",
-    description:
-      "Single-call site sweep: runs audit.page (homepage), check.robots, check.sitemap, and audit.schema in parallel and returns an overall grade plus top-5 fixes.",
+    description: [
+      "Single-call site sweep: runs audit.page (homepage), check.robots, check.sitemap, and audit.schema in parallel and returns an overall grade (A–F) plus top-5 highest-impact fixes.",
+      "Read-only. Issues several HTTP GETs against the domain (homepage fetch, robots.txt, sitemap.xml, and up to 50 sitemap URL HEAD checks); no writes, no auth required, no rate limits beyond polite per-host throttling. The homepage GET is deduplicated across audit.page and audit.schema (~2 network fetches for 4 logical checks). Deterministic, rule-based scoring; no LLM calls. Same domain returns the same grade on repeated runs given unchanged content.",
+      "Output: domain, homepage_url, fetched_at, overall_score (0–100), overall_grade, top_5_fixes (Finding[]), and a parts breakdown with individual audit.page, check.robots, check.sitemap, and audit.schema results — each may be a full result or { error: string } when that sub-audit fails.",
+      "When to use: quick 'how does this site look overall?' — use when you want a single consolidated score and actionable fix list without calling 4 tools individually. Distinct from audit.sitemap (samples N pages from the sitemap, not just the homepage) and audit.page (single-URL deep dive with all findings, not just top-5).",
+    ].join("\n\n"),
     inputSchema: auditSiteInputSchema.shape,
     outputSchema: auditSiteOutputShape,
     annotations: {
