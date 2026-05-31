@@ -2,7 +2,10 @@
   "mcpServers": {
     "ai-seo": {
       "command": "npx",
-      "args": ["-y", "@automatelab/ai-seo-mcp"]
+      "args": [
+        "-y",
+        "@automatelab/ai-seo-mcp"
+      ]
     }
   }
 }

@@ -1,0 +1,6 @@
+{
+  "description": "Audit, score, and rewrite pages for AI citation eligibility. 14 tools covering crawler access, llms.txt, structured data, canonical hygiene, sitemap freshness, AEO/GEO rewrites, and entity extraction. No API keys required.",
+  "name": "automatelab-ai-seo-mcp",
+  "version": "0.5.0",
+  "displayName": "AutomateLab AI SEO MCP"
+}
