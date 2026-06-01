@@ -18,6 +18,9 @@ import { scoreAiOverviewEligibility } from "../src/tools/score-ai-overview-eligi
 import { generateLlmsTxtTool } from "../src/tools/generate-llms-txt.js";
 import { validateLlmsTxt } from "../src/tools/validate-llms-txt.js";
 import { scoreCitationWorthiness } from "../src/tools/score-citation-worthiness.js";
+import { scoreAgenticBrowsingTool } from "../src/tools/score-agentic-browsing.js";
+import { scoreAgenticBrowsing } from "../src/lib/agentic.js";
+import { extractSections } from "../src/lib/html.js";
 import { extractEntities } from "../src/tools/extract-entities.js";
 import { diffPages } from "../src/tools/diff-pages.js";
 import { auditSite } from "../src/tools/audit-site.js";
@@ -175,6 +178,80 @@ describe("score_citation_worthiness - text mode", () => {
     expect(result.engine_scores.chatgpt).toBeGreaterThanOrEqual(0);
     expect(result.engine_scores.google_ai_overviews).toBeGreaterThanOrEqual(0);
     expect(result.engine_scores.claude).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("score_agentic_browsing - offline html", () => {
+  const goodHtml = `<!DOCTYPE html><html lang="en"><head>
+    <script type="text/mcp">{"tools":[]}</script></head>
+    <body><header><nav>nav</nav></header><main>
+    <h1>Title</h1>
+    <img src="a.png" alt="a chart" width="640" height="480">
+    <form><label for="q">Query</label><input id="q" type="text"></form>
+    </main><footer>f</footer></body></html>`;
+
+  it("scores all four factors and grades the page", () => {
+    const result = scoreAgenticBrowsing(goodHtml, { present: true, valid: true });
+    expect(result.score).toBeGreaterThanOrEqual(0);
+    expect(result.score).toBeLessThanOrEqual(100);
+    expect(["A", "B", "C", "D", "F"]).toContain(result.grade);
+    expect(result.factors.llms_txt.score).toBe(100);
+    expect(result.factors.webmcp.score).toBe(100);
+    expect(result.factors.accessibility_tree.score).toBeGreaterThan(50);
+    expect(result.factors.layout_stability.score).toBe(100);
+  });
+
+  it("penalizes missing llms.txt, lang, landmarks, and undimensioned media", () => {
+    const bad = `<html><body><div><img src="x.png"></div></body></html>`;
+    const result = scoreAgenticBrowsing(bad, { present: false });
+    expect(result.factors.llms_txt.score).toBe(0);
+    expect(result.factors.layout_stability.score).toBeLessThan(100);
+    expect(result.score).toBeLessThan(50);
+    expect(result.findings.length).toBeGreaterThan(0);
+  });
+
+  it("tool returns null url and absent llms.txt in offline html mode", async () => {
+    const result = await scoreAgenticBrowsingTool({
+      html: goodHtml,
+      respect_robots: true,
+      render: "static",
+      check_llms_txt: true,
+    });
+    expect(result.url).toBeNull();
+    // offline mode cannot probe a real llms.txt, so the factor scores 0
+    expect(result.factors.llms_txt.score).toBe(0);
+  });
+});
+
+describe("score_citation_worthiness - chunk extractability", () => {
+  it("returns per-section chunk analysis with best/worst chunks", async () => {
+    const text = [
+      "What is gradient descent? Gradient descent is an optimization algorithm that minimizes a loss function by stepping in the direction of steepest descent. It is widely used to train neural networks and converges within a few hundred iterations on convex problems.",
+      "It then does this again. They keep going. Those values change because of that.",
+    ].join("\n\n");
+    const result = await scoreCitationWorthiness({ text, target_query: "what is gradient descent" });
+    expect(result.extractability_score).toBeGreaterThanOrEqual(0);
+    expect(result.extractability_score).toBeLessThanOrEqual(100);
+    expect(result.chunk_analysis.length).toBeGreaterThan(0);
+    expect(result.most_extractable).not.toBeNull();
+    expect(result.least_extractable).not.toBeNull();
+    // the anaphora-heavy paragraph should score below the self-contained one
+    expect(result.least_extractable!.score).toBeLessThanOrEqual(result.most_extractable!.score);
+  });
+});
+
+describe("extractSections - html", () => {
+  it("splits content by h2/h3 and strips nav/footer", () => {
+    const html = `<body><nav>menu</nav><main>
+      <h2>First</h2><p>This is the first section body with enough words to count here.</p>
+      <h3>Second</h3><p>This is the second section body with sufficient length too.</p>
+      </main><footer>copyright</footer></body>`;
+    const sections = extractSections(html);
+    expect(sections.length).toBe(2);
+    expect(sections[0].heading).toBe("First");
+    expect(sections[0].level).toBe(2);
+    expect(sections[1].heading).toBe("Second");
+    expect(sections.some((s) => s.text.includes("menu"))).toBe(false);
   });
 });
 

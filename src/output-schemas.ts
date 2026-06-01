@@ -156,6 +156,42 @@ export const scoreCitationOutputShape = {
   }),
   signals: z.record(z.string(), z.number()).describe("Per-signal subscores (bluf, faq, stats, entities, etc.)."),
   suggestions: z.array(z.string()),
+  extractability_score: z.number().min(0).max(100).optional().describe("Length-weighted mean of per-section extractability scores."),
+  chunk_analysis: z
+    .array(
+      z.object({
+        heading: z.string(),
+        level: z.number(),
+        word_count: z.number(),
+        score: z.number().min(0).max(100),
+        issues: z.array(z.string()),
+      }),
+    )
+    .optional()
+    .describe("Per-section extractability: how cleanly an LLM can lift a standalone answer from each chunk."),
+  most_extractable: z.object({ heading: z.string(), score: z.number() }).nullable().optional(),
+  least_extractable: z.object({ heading: z.string(), score: z.number() }).nullable().optional(),
+} as const;
+
+const agenticFactorSchema = z.object({
+  score: z.number().min(0).max(100).describe("0-100 subscore for this signal."),
+  detail: z.string().describe("One-line description of what was measured."),
+});
+
+export const scoreAgenticBrowsingOutputShape = {
+  url: z.string().nullable().describe("The URL scored (null when scoring raw html)."),
+  fetched_at: z.string().describe("UTC ISO-8601 timestamp."),
+  score: z.number().min(0).max(100).describe("Weighted 0-100 Agentic Browsing score (each factor 25%)."),
+  grade: gradeSchema,
+  factors: z
+    .object({
+      llms_txt: agenticFactorSchema,
+      webmcp: agenticFactorSchema,
+      accessibility_tree: agenticFactorSchema,
+      layout_stability: agenticFactorSchema,
+    })
+    .describe("The four Lighthouse Agentic Browsing signals, scored 0-100 each."),
+  findings: z.array(findingSchema),
 } as const;
 
 export const generateLlmsTxtOutputShape = {

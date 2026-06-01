@@ -130,7 +130,7 @@ The Action builds the auditor from the pinned ref, runs `audit_page` on each URL
 ---
 
 <details>
-<summary>MCP tool surface (18 tools)</summary>
+<summary>MCP tool surface (19 tools)</summary>
 
 | Tool | Purpose |
 |------|---------|
@@ -143,7 +143,8 @@ The Action builds the auditor from the pinned ref, runs `audit_page` on each URL
 | `check.sitemap` | Validate XML sitemaps: presence, URL count, `lastmod` freshness, image/video extensions. |
 | `check.technical` | HEAD tag audit: canonical, OpenGraph, Twitter Card, hreflang, HTTPS, noindex, title hygiene. |
 | `score.ai_overview_eligibility` | Score a page's probability of appearing in Google AI Overviews using current correlation factors. |
-| `score.citation_worthiness` | Score how citable a page or text block is for Perplexity, ChatGPT, Google AI Overviews, and Claude. |
+| `score.citation_worthiness` | Score how citable a page or text block is for Perplexity, ChatGPT, Google AI Overviews, and Claude. Includes per-section `chunk_analysis` / `extractability_score`: how cleanly an LLM can lift a standalone answer from each heading. |
+| `score.agentic_browsing` | Score a page against the Lighthouse "Agentic Browsing" category (May 2026): llms.txt, WebMCP, accessibility-tree integrity, and layout stability. |
 | `score.test_citation` | Simulate "would an AI engine cite this for this query?" via MCP sampling, with deterministic heuristic fallback. |
 | `llms_txt.generate` | Generate `llms.txt` and optionally `llms-full.txt` from a domain's sitemap. |
 | `llms_txt.validate` | Lint an existing `llms.txt` for spec compliance and broken links. |

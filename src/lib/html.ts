@@ -195,6 +195,47 @@ export function parseBody(html: string, baseUrl: string): PageStructure {
   };
 }
 
+/** A content section: a heading and the prose that follows it until the next heading. */
+export interface ContentSection {
+  heading: string; // heading text; "" for the intro before the first heading
+  level: number;   // 2 for h2, 3 for h3; 0 for the intro block
+  text: string;    // concatenated paragraph / list-item text under this heading
+}
+
+/**
+ * Split a page's main content into heading-delimited sections, in document order.
+ * Nav/header/footer/aside/script/style are stripped first. Nested list text is
+ * de-duplicated (a parent <li> does not re-absorb its child <li> text).
+ */
+export function extractSections(html: string): ContentSection[] {
+  const $ = cheerio.load(html);
+  const body = $("body");
+  body.find("script, style, nav, header, footer, aside, .nav, .menu").remove();
+
+  const sections: ContentSection[] = [];
+  let current: ContentSection = { heading: "", level: 0, text: "" };
+  const flush = (): void => {
+    const text = current.text.trim();
+    if (text.length > 0 || current.heading.length > 0) sections.push({ ...current, text });
+  };
+
+  body.find("h2, h3, p, li").each((_, el) => {
+    const tag = (el as { name?: string }).name ?? "";
+    if (tag === "h2" || tag === "h3") {
+      flush();
+      current = { heading: $(el).text().replace(/\s+/g, " ").trim(), level: tag === "h2" ? 2 : 3, text: "" };
+      return;
+    }
+    // For <li>, drop nested list text so it isn't counted twice.
+    const node = tag === "li" ? $(el).clone().children("ul, ol").remove().end() : $(el);
+    const txt = node.text().replace(/\s+/g, " ").trim();
+    if (txt.length > 0) current.text += (current.text ? " " : "") + txt;
+  });
+  flush();
+
+  return sections.filter((s) => s.heading.length > 0 || s.text.length > 0);
+}
+
 /** Extract all JSON-LD script blocks from HTML as raw strings. */
 export function extractJsonLdBlocks(html: string): string[] {
   const $ = cheerio.load(html);

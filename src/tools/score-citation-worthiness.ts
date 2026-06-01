@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import { politeFetch, type HostDelayMap } from "../lib/fetch.js";
-import { parseBody, parseHead } from "../lib/html.js";
+import { parseBody, parseHead, extractSections, type ContentSection } from "../lib/html.js";
 import { parseJsonLd, getAllSchemaTypes } from "../lib/schema.js";
 import type { Finding } from "../types.js";
 
@@ -19,6 +19,14 @@ export const scoreCitationWorthinessInputSchema = z
   });
 
 export type ScoreCitationWorthinessInput = z.infer<typeof scoreCitationWorthinessInputSchema>;
+
+export interface ChunkScore {
+  heading: string;     // section heading ("" for the intro block)
+  level: number;       // 2 or 3 (0 for intro)
+  word_count: number;
+  score: number;       // 0-100 extractability of this chunk
+  issues: string[];    // why it loses points
+}
 
 export interface CitationWorthinessResult {
   overall_score: number;
@@ -36,8 +44,109 @@ export interface CitationWorthinessResult {
     heading_question_ratio: number;
     answer_completeness: number;
   };
+  /**
+   * Section-by-section extractability: how cleanly an LLM can lift a
+   * self-contained answer from each chunk. The mechanic AEO/GEO actually turns
+   * on, scored per heading.
+   */
+  extractability_score: number; // 0-100, length-weighted mean of chunk scores
+  chunk_analysis: ChunkScore[];
+  most_extractable: { heading: string; score: number } | null;
+  least_extractable: { heading: string; score: number } | null;
   improvements: string[];
   findings: Finding[];
+}
+
+// A sentence/chunk that opens with one of these depends on prior context and
+// cannot be lifted standalone.
+const PRONOUN_START = /^(it|this|that|they|these|those|he|she|them|its|their|such)\b/i;
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/** Grade a single section for how cleanly it can be lifted as a standalone answer. */
+function scoreChunk(section: ContentSection): ChunkScore {
+  const words = section.text.split(/\s+/).filter((w) => w.length > 0);
+  const wc = words.length;
+  const issues: string[] = [];
+  let score = 100;
+
+  // Length band: 40-120 words is the citable sweet spot.
+  if (wc < 25) {
+    score -= 35;
+    issues.push("too short to stand alone (<25 words)");
+  } else if (wc > 200) {
+    score -= 22;
+    issues.push("too long for a clean lift (>200 words)");
+  } else if (wc > 120) {
+    score -= 8;
+    issues.push("slightly long (>120 words)");
+  }
+
+  const sentences = splitSentences(section.text);
+  const first = sentences[0] ?? section.text.trim();
+
+  // Opens with an unresolved reference.
+  if (PRONOUN_START.test(section.text.trim())) {
+    score -= 20;
+    issues.push("opens with a pronoun that depends on prior context");
+  }
+  // Opening sentence too long to be a direct answer.
+  if (first.split(/\s+/).filter(Boolean).length > 35) {
+    score -= 10;
+    issues.push("long opening sentence (>35 words)");
+  }
+  // No concrete anchor (statistic or definition) the engine can quote.
+  const hasStat = /\b\d[\d,.%]*\b/.test(section.text);
+  const hasDef = /\b(is|are|means|refers to|defined as|consists of)\b/i.test(first);
+  if (!hasStat && !hasDef) {
+    score -= 10;
+    issues.push("no statistic or definition to anchor the answer");
+  }
+  // Heavy cross-sentence references through the body.
+  if (sentences.length >= 3) {
+    const anaphoric = sentences.filter((s) => PRONOUN_START.test(s)).length;
+    if (anaphoric / sentences.length > 0.4) {
+      score -= 10;
+      issues.push("heavy cross-sentence references (anaphora)");
+    }
+  }
+
+  return {
+    heading: section.heading,
+    level: section.level,
+    word_count: wc,
+    score: Math.max(0, Math.min(100, score)),
+    issues,
+  };
+}
+
+/** Length-weighted extractability plus the best/worst chunk. */
+function analyzeChunks(sections: ContentSection[]): {
+  extractability_score: number;
+  chunk_analysis: ChunkScore[];
+  most_extractable: { heading: string; score: number } | null;
+  least_extractable: { heading: string; score: number } | null;
+} {
+  const scored = sections.map(scoreChunk).filter((c) => c.word_count >= 8);
+  if (scored.length === 0) {
+    return { extractability_score: 0, chunk_analysis: [], most_extractable: null, least_extractable: null };
+  }
+  const totalWords = scored.reduce((a, c) => a + c.word_count, 0);
+  const weighted = scored.reduce((a, c) => a + c.score * c.word_count, 0) / Math.max(1, totalWords);
+  const ranked = [...scored].sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  const worst = ranked[ranked.length - 1];
+  return {
+    extractability_score: Math.round(weighted),
+    chunk_analysis: scored.slice(0, 40),
+    most_extractable: { heading: best.heading || "(intro)", score: best.score },
+    least_extractable: { heading: worst.heading || "(intro)", score: worst.score },
+  };
 }
 
 function computeBluf(bodyText: string, targetQuery?: string): boolean {
@@ -80,6 +189,7 @@ export async function scoreCitationWorthiness(
   let paragraphs: string[] = [];
   let hasStructuredData = false;
   let wordCount = 0;
+  let sections: ContentSection[] = [];
 
   if (input.url) {
     const result = await politeFetch(input.url, {
@@ -92,6 +202,7 @@ export async function scoreCitationWorthiness(
     h3s = body.h3s;
     paragraphs = body.paragraphs;
     wordCount = body.wordCount;
+    sections = extractSections(result.body);
     const jsonLdBlocks = parseJsonLd(result.body);
     const foundTypes = getAllSchemaTypes(jsonLdBlocks);
     hasStructuredData = foundTypes.length > 0;
@@ -102,7 +213,12 @@ export async function scoreCitationWorthiness(
     const lines = bodyText.split("\n");
     h3s = lines.filter((l) => l.trim().endsWith("?") && l.trim().length < 100);
     paragraphs = lines.filter((l) => l.trim().split(/\s+/).length >= 20);
+    // Text mode: each prose paragraph is its own (headingless) chunk.
+    sections = paragraphs.map((p) => ({ heading: "", level: 0, text: p }));
   }
+
+  const { extractability_score, chunk_analysis, most_extractable, least_extractable } =
+    analyzeChunks(sections);
 
   // Sub-scores
   const bluf_present = computeBluf(bodyText, input.target_query);
@@ -168,7 +284,12 @@ export async function scoreCitationWorthiness(
   if (entity_clarity < 20) {
     improvements.push("Define key terms inline (e.g., 'X is a type of Y that...') to improve entity clarity.");
   }
-  const topImprovements = improvements.slice(0, 3);
+  if (extractability_score < 60 && least_extractable) {
+    improvements.push(
+      `Tighten sections so each answers its heading in 40-120 self-contained words (least extractable: "${least_extractable.heading}", ${least_extractable.score}/100).`,
+    );
+  }
+  const topImprovements = improvements.slice(0, 4);
 
   // Findings
   if (overall_score < 40) {
@@ -193,6 +314,10 @@ export async function scoreCitationWorthiness(
       heading_question_ratio,
       answer_completeness,
     },
+    extractability_score,
+    chunk_analysis,
+    most_extractable,
+    least_extractable,
     improvements: topImprovements,
     findings,
   };

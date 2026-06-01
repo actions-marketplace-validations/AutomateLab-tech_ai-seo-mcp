@@ -16,6 +16,7 @@ import { scoreAiOverviewEligibility, scoreAiOverviewEligibilityInputSchema } fro
 import { generateLlmsTxtTool, generateLlmsTxtInputSchema } from "./tools/generate-llms-txt.js";
 import { validateLlmsTxt } from "./tools/validate-llms-txt.js";
 import { scoreCitationWorthiness } from "./tools/score-citation-worthiness.js";
+import { scoreAgenticBrowsingTool } from "./tools/score-agentic-browsing.js";
 import { rewriteForAeo } from "./tools/rewrite-for-aeo.js";
 import { rewriteForGeo } from "./tools/rewrite-for-geo.js";
 import { extractEntities } from "./tools/extract-entities.js";
@@ -35,6 +36,7 @@ import {
   checkTechnicalOutputShape,
   scoreAiOverviewOutputShape,
   scoreCitationOutputShape,
+  scoreAgenticBrowsingOutputShape,
   generateLlmsTxtOutputShape,
   validateLlmsTxtOutputShape,
   rewriteOutputShape,
@@ -290,6 +292,41 @@ server.registerTool(
   async (input) => wrapHandler(() => scoreAiOverviewEligibility(input)),
 );
 
+// --- score.agentic_browsing ---
+server.registerTool(
+  "score.agentic_browsing",
+  {
+    title: "Score Agentic Browsing readiness",
+    description: [
+      "Score a page against the four signals Google added to the Lighthouse \"Agentic Browsing\" category in May 2026: presence of an llms.txt, WebMCP integration, accessibility-tree integrity, and layout stability. Returns an overall 0-100 score, a letter grade, and a per-factor breakdown.",
+      "Read-only. One HTTP GET for the page plus one for /llms.txt (skip with check_llms_txt=false). Pass `html` instead of `url` to score markup offline (llms.txt is then treated as absent).",
+      "Deterministic, rule-based heuristics over the fetched HTML; no LLM and no headless render required. This approximates Lighthouse's runtime signals from static markup - it does not execute Lighthouse.",
+      "When to use: checking whether a site is ready for AI agents / agentic browsers, or tracking the new Lighthouse Agentic Browsing category. For citation-eligibility of content, use `score.citation_worthiness`; for a full page audit, use `audit.page`.",
+    ].join("\n\n"),
+    inputSchema: {
+      url: z.string().url().optional().describe("Public URL to fetch and score. Either this OR `html` is required."),
+      html: z.string().optional().describe("Raw HTML to score offline without fetching. Either this OR `url` is required. llms.txt is treated as absent in this mode."),
+      respect_robots: z.boolean().optional().default(true).describe("If true (default), respect robots.txt when fetching `url`. Ignored when `html` is used."),
+      render: z.enum(["static", "headless"]).optional().default("static").describe("Rendering mode for `url`. `static` (default) reads raw HTML; `headless` runs Playwright Chromium (adds 3-10s; requires `playwright-core`). Ignored when `html` is used."),
+      check_llms_txt: z.boolean().optional().default(true).describe("If true (default), probe /llms.txt for the host to score the llms.txt factor. Set false to skip that extra HTTP GET."),
+    },
+    outputSchema: scoreAgenticBrowsingOutputShape,
+    annotations: {
+      title: "Score Agentic Browsing readiness",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  },
+  async (input) => {
+    if (!input.url && !input.html) {
+      return toolError({ type: "invalid_url", message: "One of url or html is required" });
+    }
+    return wrapHandler(() => scoreAgenticBrowsingTool(input as Parameters<typeof scoreAgenticBrowsingTool>[0]));
+  },
+);
+
 // --- llms_txt.generate ---
 server.registerTool(
   "llms_txt.generate",
@@ -366,6 +403,7 @@ server.registerTool(
     title: "Score AI citation worthiness",
     description: [
       "Score how citable a page or text block is for AI engines (ChatGPT, Claude, Perplexity, Google AI Overviews). Evaluates BLUF (bottom-line-up-front) opening, FAQ patterns, statistic density, entity clarity, and answer-shape fit for the optional `target_query`.",
+      "Also returns `extractability_score` plus per-section `chunk_analysis`: how cleanly an LLM can lift a self-contained answer from each heading-delimited section (length band, lead-sentence directness, anaphora, concrete anchors). This is the GEO mechanic - it pinpoints the exact sections to tighten, with `most_extractable` / `least_extractable` called out.",
       "Read-only when given `url` (one HTTP GET). Zero network when given `text`. No writes.",
       "Deterministic, rule-based; no LLM calls. Returns reproducible scores.",
       "When to use: pre-publish content QA, or to triage which existing pages are worth optimizing for AI citation first. Distinct from `score.ai_overview_eligibility` which scores Google-AI-Overview ranking probability for a URL; this scores the inherent citability of a text passage regardless of host.",
