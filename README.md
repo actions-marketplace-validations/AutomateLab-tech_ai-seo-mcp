@@ -103,6 +103,26 @@ Then call `audit_page` with `render: "headless"`. Use static for everything else
 
 ---
 
+## Run it in CI (GitHub Action)
+
+This repo doubles as a GitHub Action. Drop it in a workflow to fail a PR when any page regresses below an AI-citation score - the same audit engine, gated on every change.
+
+```yaml
+- uses: actions/checkout@v4
+- name: AI-SEO audit
+  uses: AutomateLab-tech/ai-seo-mcp@v0.5.0
+  with:
+    urls: "https://example.com,https://example.com/pricing"
+    min-score: "70"            # fail if any URL scores below this
+    respect-robots: "true"     # set false for staging / sites you own
+    report-path: "ai-seo-report.md"   # optional Markdown report artifact
+    fail-on-regression: "true"
+```
+
+The Action builds the auditor from the pinned ref, runs `audit_page` on each URL, writes a scorecard to the job summary, and exits non-zero if any URL falls below `min-score` (when `fail-on-regression` is true). Outputs: `min_score_observed`, `urls_audited`, `report_path`. Full example: [`examples/github-action-usage.yml`](./examples/github-action-usage.yml).
+
+---
+
 ## Further reading
 
 - [automatelab.tech](https://automatelab.tech/products/mcp/ai-seo/) - teardowns and case studies

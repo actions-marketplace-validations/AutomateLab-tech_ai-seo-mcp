@@ -19,7 +19,7 @@ jobs:
 
       - name: AI-SEO audit
         id: ai-seo
-        uses: AutomateLab-tech/ai-seo@v0.3.0
+        uses: AutomateLab-tech/ai-seo-mcp@v0.5.0
         with:
           urls: "https://example.com,https://example.com/pricing"
           min-score: "70"
