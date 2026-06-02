@@ -4,6 +4,39 @@ All notable changes to `@automatelab/ai-seo-mcp` are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-02
+
+### Fixed
+
+- **`llms_txt.generate` output-schema validation.** The handler omitted the required `domain` field, so the SDK rejected every response with `MCP error -32602` (invalid `structuredContent`). `domain` is now populated, and `llms_full_txt` is relaxed to nullable to match the handler's `null`-when-`include_full=false` return.
+- **`llms_txt.generate` now follows sitemap-index files.** It previously parsed only a top-level `<urlset>`, so sites whose `sitemap.xml` is an index pointing at child sitemaps fell back to the homepage only. It now walks the referenced child sitemaps (bounded breadth-first) and indexes the full `max_pages`.
+
+## [0.6.0] - 2026-06-01
+
+### Added
+
+- **`score.agentic_browsing`** — new tool scoring a page against Lighthouse's Agentic Browsing signals: `llms_txt`, `webmcp`, `accessibility_tree`, and `layout_stability` (0-100 each), with a letter grade and findings.
+- **Chunk-level extractability in `score.citation_worthiness`** — section-by-section scoring of how cleanly an LLM can lift a self-contained answer from each chunk, surfaced as a length-weighted `extractability_score` plus per-chunk analysis and the most/least extractable sections.
+
+## [0.5.1] - 2026-06-01
+
+### Changed
+
+- **The GitHub Action builds the auditor from a pinned ref** rather than latest, eliminating version drift, and the CLI exit code now propagates (a `tee` in the pipeline was masking the auditor's exit status).
+
+### Added
+
+- **`openclaw.plugin.json`** + a clawhub `SKILL.md` so the MCP lists on clawhub / OpenClaw.
+- Expanded the `audit.site` description (Glama listing) with behavioral transparency and when-to-use guidance.
+
+## [0.5.0] - 2026-05-26
+
+### Added
+
+- **Body-quality dimensions in `audit.page`** — image alt-text coverage, anchor-text quality, heading hierarchy, Title↔H1 overlap, and readability.
+- **Response-header dimensions in `audit.page`** — mixed-content detection plus HSTS, `X-Content-Type-Options`, and `Referrer-Policy` checks.
+- **`.mcp.json`** at repo root for Open Plugins / cursor.directory compatibility.
+
 ## [0.4.1] - 2026-05-23
 
 ### Added
