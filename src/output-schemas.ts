@@ -17,12 +17,19 @@ export const findingSchema = z.object({
       "presence",
       "sitemap",
       "llms_txt",
+      "citation",
+      "evidence",
+      "trust",
+      "entity",
+      "content",
     ])
     .describe("Finding category - which AI-SEO dimension it relates to."),
   where: z.string().describe("Location of the issue (CSS selector, JSON-LD path, robots.txt line, or 'page-level')."),
   message: z.string().describe("Human-readable description of the issue."),
   fix: z.string().describe("Concrete, copy-pasteable fix."),
   estimated_impact: z.enum(["high", "medium", "low"]).optional().describe("Estimated impact on AI citation probability when resolved."),
+  failure_signal: z.string().optional().describe("Falsifiability: the observable signal that would prove the fix did NOT work."),
+  leading_indicator: z.string().optional().describe("Falsifiability: the leading indicator to monitor to confirm the fix is landing."),
 });
 
 export const gradeSchema = z.enum(["A", "B", "C", "D", "F"]).describe("Letter grade derived from the numeric score.");
@@ -59,8 +66,22 @@ export const auditPageOutputShape = {
       authority: z.number(),
       entity_density: z.number(),
       sitemap: z.number(),
+      citability: z.number().describe("Passage-level extractability: share of sections in the 134-167 word citable band."),
+      evidence: z.number().describe("Citations / statistics / quotations density (Princeton GEO weighting)."),
+      trust: z.number().describe("E-E-A-T trust signals: author, dates, contact/policy pages, HTTPS."),
     })
     .describe("Per-dimension 0-100 subscores. The composite score is a weighted blend of these."),
+  platform_readiness: z
+    .object({
+      chatgpt: z.object({ score: z.number(), label: z.enum(["ready", "partial", "weak"]) }),
+      perplexity: z.object({ score: z.number(), label: z.enum(["ready", "partial", "weak"]) }),
+      google_ai_overview: z.object({ score: z.number(), label: z.enum(["ready", "partial", "weak"]) }),
+      gemini: z.object({ score: z.number(), label: z.enum(["ready", "partial", "weak"]) }),
+    })
+    .describe("Per-engine readiness derived from the dimensions; engines reward different signals."),
+  score_caps: z
+    .array(z.string())
+    .describe("Hard blockers that capped the composite score (e.g. noindex, AI bots blocked). Empty when none fired."),
   content_quality: z
     .enum(["static_html", "ssr_likely", "spa_empty"])
     .describe("Classification of the fetched HTML's readiness. spa_empty means audit results are degraded."),
@@ -181,7 +202,7 @@ const agenticFactorSchema = z.object({
 export const scoreAgenticBrowsingOutputShape = {
   url: z.string().nullable().describe("The URL scored (null when scoring raw html)."),
   fetched_at: z.string().describe("UTC ISO-8601 timestamp."),
-  score: z.number().min(0).max(100).describe("Weighted 0-100 Agentic Browsing score (each factor 25%)."),
+  score: z.number().min(0).max(100).describe("Weighted 0-100 Agentic Browsing score (accessibility 40%, layout 35%, webmcp 15%, llms.txt 10%)."),
   grade: gradeSchema,
   factors: z
     .object({
@@ -199,6 +220,15 @@ export const generateLlmsTxtOutputShape = {
   llms_txt: z.string().describe("The generated llms.txt file content. Caller is responsible for hosting it."),
   llms_full_txt: z.string().nullable().optional().describe("The generated llms-full.txt content. Null unless include_full=true."),
   pages_indexed: z.number().describe("Number of pages successfully sampled from the sitemap."),
+} as const;
+
+export const generatePricingMdOutputShape = {
+  domain: z.string(),
+  pricing_md: z.string().describe("The generated pricing.md content. Caller hosts it at /pricing.md."),
+  source_url: z.string().nullable().describe("The pricing page the content was derived from (null when none was found)."),
+  tiers_detected: z.number().describe("Number of pricing tiers extracted."),
+  validation_issues: z.array(findingSchema).describe("Issues encountered while deriving the file."),
+  suggested_path: z.literal("/pricing.md"),
 } as const;
 
 export const validateLlmsTxtOutputShape = {

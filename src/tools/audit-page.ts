@@ -19,7 +19,19 @@ import { auditSchema } from "./audit-schema.js";
 import { checkRobots } from "./check-robots.js";
 import { checkSitemap } from "./check-sitemap.js";
 import { scoreAiOverviewEligibility } from "./score-ai-overview-eligibility.js";
-import { freshnessScore, deriveGrade, computeWeightedScore } from "../lib/score.js";
+import {
+  freshnessScore,
+  deriveGrade,
+  computeWeightedScore,
+  applyVetoCaps,
+  platformReadiness,
+  type DimensionScores,
+  type PlatformReadiness,
+} from "../lib/score.js";
+import { scoreCitability } from "../lib/score-citability.js";
+import { scoreEvidence } from "../lib/score-evidence.js";
+import { scoreEeatEntity } from "../lib/score-eeat.js";
+import { scoreContent } from "../lib/score-content.js";
 import { renderScorecardHtml } from "../lib/scorecard-html.js";
 import type { Finding, AuditResult } from "../types.js";
 
@@ -67,16 +79,11 @@ export type ContentQuality = "static_html" | "ssr_likely" | "spa_empty";
 
 export interface AuditPageResult extends AuditResult {
   citation_verdict: CitationVerdict;
-  dimension_scores: {
-    schema: number;
-    robots: number;
-    technical: number;
-    freshness: number;
-    structure: number;
-    authority: number;
-    entity_density: number;
-    sitemap: number;
-  };
+  dimension_scores: DimensionScores;
+  /** Per-engine readiness derived from the dimension scores (engines reward different signals). */
+  platform_readiness: PlatformReadiness;
+  /** Hard blockers that capped the composite score (empty when none fired). */
+  score_caps: string[];
   /**
    * Heuristic classification of the fetched HTML's content readiness.
    * - `static_html`: body text >= 500 chars; audit is reliable.
@@ -148,6 +155,7 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
 
   // --- Technical dimension ---
   let technicalScore = 50;
+  let noindex = false;
   try {
     const techResult = await checkTechnical(
       { url: input.url, respect_robots: input.respect_robots },
@@ -162,13 +170,15 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     const warnings = techFindings.filter((f) => f.severity === "warning").length;
     technicalScore = Math.max(0, 100 - criticals * 20 - warnings * 8);
     // noindex is a killer
-    if (techResult.noindex) technicalScore = Math.max(0, technicalScore - 30);
+    noindex = techResult.noindex;
+    if (noindex) technicalScore = Math.max(0, technicalScore - 30);
   } catch {
     // technical audit failed
   }
 
   // --- Robots dimension ---
   let robotsScore = 70;
+  let aiSearchBlocked = false;
   try {
     const hostname = new URL(input.url).hostname;
     const robotsResult = await checkRobots({ domain: hostname });
@@ -176,6 +186,9 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
       (f) => f.severity === "critical" || f.severity === "warning"
     );
     allFindings.push(...robotsResult.findings);
+    aiSearchBlocked =
+      robotsResult.recommended_posture === "block_all" ||
+      Object.values(robotsResult.search_crawlers).every((c) => c === "disallowed");
     robotsScore = Math.max(
       0,
       100 -
@@ -398,7 +411,30 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
   const authExternalLinks = body.externalLinks.filter((href) =>
     authoritativeDomains.some((d) => href.includes(d))
   ).length;
-  const entityDensityScore = Math.min(100, (sameAsCount + authExternalLinks) * 7);
+  const baseEntityDensity = Math.min(100, (sameAsCount + authExternalLinks) * 7);
+
+  // --- Citation / evidence / trust / entity / content dimensions (GEO) ---
+  const citabilityRes = scoreCitability(result.body);
+  allFindings.push(...citabilityRes.findings);
+
+  const evidenceRes = scoreEvidence(result.body, body.bodyText, body.externalLinks, body.wordCount);
+  allFindings.push(...evidenceRes.findings);
+
+  const eeatRes = scoreEeatEntity({
+    html: result.body,
+    url: input.url,
+    foundTypes,
+    jsonLdBlocks,
+    internalLinks: body.internalLinks,
+    externalLinks: body.externalLinks,
+  });
+  allFindings.push(...eeatRes.findings);
+
+  const contentRes = scoreContent(body.bodyText, body.wordCount);
+  allFindings.push(...contentRes.findings);
+
+  // Entity density blends the raw link-count proxy with the structured-entity score.
+  const entityDensityScore = Math.round((baseEntityDensity + eeatRes.entity_score) / 2);
 
   // --- Sitemap dimension ---
   let sitemapScore = 50;
@@ -422,7 +458,7 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
   }
 
   // --- Weighted composite score ---
-  const dimensionScores = {
+  const dimensionScores: DimensionScores = {
     schema: schemaScore,
     robots: robotsScore,
     technical: technicalScore,
@@ -431,6 +467,9 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     authority: authorityScore,
     entity_density: entityDensityScore,
     sitemap: sitemapScore,
+    citability: citabilityRes.score,
+    evidence: evidenceRes.score,
+    trust: eeatRes.trust_score,
   };
 
   const scriptCount = countScriptTags(result.body);
@@ -455,8 +494,22 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     });
   }
 
-  const score = computeWeightedScore(dimensionScores);
+  const rawScore = computeWeightedScore(dimensionScores);
+
+  // --- Veto caps: hard blockers that make the page uncitable regardless of the
+  // other dimensions cap the composite at grade-C ceiling. ---
+  const isHttps = (() => {
+    try { return new URL(input.url).protocol === "https:"; } catch { return false; }
+  })();
+  const vetoes: string[] = [];
+  if (noindex) vetoes.push("Page is noindex — excluded from search and AI indexes.");
+  if (aiSearchBlocked) vetoes.push("AI search crawlers are blocked in robots.txt — engines can't read the page to cite it.");
+  if (contentQuality === "spa_empty") vetoes.push("Content is JS-only (SPA) — crawlers without JS see an empty page.");
+  if (!isHttps) vetoes.push("Served over HTTP, not HTTPS.");
+  const veto = applyVetoCaps(rawScore, vetoes);
+  const score = veto.score;
   const grade = deriveGrade(score);
+  const platform_readiness = platformReadiness(dimensionScores);
 
   // Deduplicate findings (same message from multiple sub-tools)
   const seen = new Set<string>();
@@ -503,6 +556,8 @@ export async function auditPage(input: AuditPageInput): Promise<AuditPageResult>
     score,
     grade,
     dimension_scores: dimensionScores,
+    platform_readiness,
+    score_caps: veto.reasons,
     content_quality: contentQuality,
   };
 

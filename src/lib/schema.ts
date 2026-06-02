@@ -2,9 +2,12 @@
 
 import { extractJsonLdBlocks } from "./html.js";
 import schemaTypes from "./schema-types.json" with { type: "json" };
+import deprecatedTypes from "./deprecated-schema-types.json" with { type: "json" };
 import type { Finding } from "../types.js";
 
 export const KNOWN_SCHEMA_TYPES = new Set<string>(schemaTypes as string[]);
+/** Types still valid in Schema.org but whose Google rich result was retired/narrowed. */
+export const DEPRECATED_SCHEMA_TYPES = deprecatedTypes as Record<string, string>;
 
 export interface ParsedJsonLd {
   raw: string;
@@ -291,15 +294,23 @@ export function validateJsonLd(blocks: ParsedJsonLd[]): Finding[] {
       }
     }
 
-    // Unknown type check
+    // Unknown / deprecated type checks
     for (const t of block.types) {
-      if (!KNOWN_SCHEMA_TYPES.has(t)) {
+      if (DEPRECATED_SCHEMA_TYPES[t]) {
         findings.push({
-          severity: "warning",
+          severity: "info",
+          category: "schema",
+          where: "@type",
+          message: `Schema.org type "${t}" no longer yields a Google rich result.`,
+          fix: DEPRECATED_SCHEMA_TYPES[t],
+        });
+      } else if (!KNOWN_SCHEMA_TYPES.has(t)) {
+        findings.push({
+          severity: "info",
           category: "schema",
           where: "@type",
           message: `Unrecognized Schema.org type: "${t}".`,
-          fix: "Verify the type name at schema.org and correct any typo or deprecated type name.",
+          fix: "Verify the type name at schema.org; correct any typo. If it is a valid but uncommon type, this is safe to ignore.",
           estimated_impact: "low",
         });
       }

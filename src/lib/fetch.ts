@@ -6,6 +6,7 @@ import { POLITE_FETCH } from "./config.js";
 import { checkRobotsAllowed, fetchRobotsTxt } from "./robots.js";
 import { cacheGet, cacheSet, type RenderMode } from "./cache.js";
 import { renderHeadless, HeadlessUnavailableError } from "./headless.js";
+import { ssrfBlockReason } from "./ssrf.js";
 import type { ToolError } from "../types.js";
 
 // Per-call hostname -> last-request timestamp for inter-request delay tracking.
@@ -76,7 +77,24 @@ export async function politeFetch(
     });
   }
 
+  // Protocol allow-list: only http(s). Blocks file:, ftp:, gopher:, data:, etc.
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new ToolFetchError({
+      type: "blocked_host",
+      url,
+      reason: `unsupported protocol "${parsedUrl.protocol}" (only http/https allowed)`,
+    });
+  }
+
   const hostname = parsedUrl.hostname;
+
+  // SSRF guard: block private/loopback/link-local/reserved targets, including
+  // hostnames that resolve to private IPs (DNS rebinding).
+  const blockReason = await ssrfBlockReason(hostname);
+  if (blockReason) {
+    throw new ToolFetchError({ type: "blocked_host", url, reason: blockReason });
+  }
+
   const respectRobots =
     opts.respectRobots !== undefined ? opts.respectRobots : POLITE_FETCH.RESPECT_ROBOTS;
   const renderMode: RenderMode = opts.renderMode ?? "static";
@@ -251,6 +269,9 @@ export async function politeHead(
 ): Promise<number | null> {
   const hostname = getHostname(url);
   if (!hostname) return null;
+
+  // SSRF guard for HEAD checks too (link-health probes hit arbitrary URLs).
+  if (await ssrfBlockReason(hostname)) return null;
 
   if (opts.hostDelays) {
     const lastRequest = opts.hostDelays.get(hostname);

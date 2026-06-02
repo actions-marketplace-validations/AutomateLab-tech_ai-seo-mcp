@@ -14,6 +14,7 @@ import { checkSitemap, checkSitemapInputSchema } from "./tools/check-sitemap.js"
 import { checkTechnical, checkTechnicalInputSchema } from "./tools/check-technical.js";
 import { scoreAiOverviewEligibility, scoreAiOverviewEligibilityInputSchema } from "./tools/score-ai-overview-eligibility.js";
 import { generateLlmsTxtTool, generateLlmsTxtInputSchema } from "./tools/generate-llms-txt.js";
+import { generatePricingMdTool, generatePricingMdInputSchema } from "./tools/generate-pricing-md.js";
 import { validateLlmsTxt } from "./tools/validate-llms-txt.js";
 import { scoreCitationWorthiness } from "./tools/score-citation-worthiness.js";
 import { scoreAgenticBrowsingTool } from "./tools/score-agentic-browsing.js";
@@ -38,6 +39,7 @@ import {
   scoreCitationOutputShape,
   scoreAgenticBrowsingOutputShape,
   generateLlmsTxtOutputShape,
+  generatePricingMdOutputShape,
   validateLlmsTxtOutputShape,
   rewriteOutputShape,
   extractEntitiesOutputShape,
@@ -349,6 +351,29 @@ server.registerTool(
     },
   },
   async (input) => wrapHandler(() => generateLlmsTxtTool(input)),
+);
+
+// --- pricing.generate ---
+server.registerTool(
+  "pricing.generate",
+  {
+    title: "Generate pricing.md",
+    description: [
+      "Generate a machine-readable /pricing.md for AI shopping/agent flows. Finds the site's pricing page (or uses `pricing_url`), extracts named tiers and price lines, and returns the file content as a string.",
+      "Read-only. Issues a few HTTP GETs probing common pricing paths. Deterministic; no LLM. Does NOT write or upload — the caller hosts the file at `https://<domain>/pricing.md`.",
+      "When to use: a SaaS/e-commerce site that wants agents to read pricing without parsing a JS-rendered table. Falls back to a fill-in template when no prices are detectable.",
+    ].join("\n\n"),
+    inputSchema: generatePricingMdInputSchema.shape,
+    outputSchema: generatePricingMdOutputShape,
+    annotations: {
+      title: "Generate pricing.md",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+  },
+  async (input) => wrapHandler(() => generatePricingMdTool(input)),
 );
 
 // --- llms_txt.validate ---

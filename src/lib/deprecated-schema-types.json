@@ -1,0 +1,10 @@
+{
+  "HowTo": "Google removed HowTo rich results (June 2025). The type is still valid Schema.org but no longer yields rich results.",
+  "FAQPage": "Google restricts FAQ rich results to authoritative government/health sites (Aug 2023). Still valid and useful for AI extraction, but expect no SERP rich result.",
+  "ClaimReview": "ClaimReview rich results were deprecated for most sites (June 2025). Still valid Schema.org; no rich result for non-allowlisted publishers.",
+  "SpecialAnnouncement": "COVID-era SpecialAnnouncement rich results were retired (June 2025).",
+  "EstimatedSalary": "EstimatedSalary rich results were retired (June 2025).",
+  "LearningVideo": "LearningVideo rich results were retired (June 2025).",
+  "VehicleListing": "VehicleListing rich results were retired (June 2025).",
+  "Course": "Course Info carousel rich result was narrowed (June 2025); the Course type stays valid for AI extraction."
+}

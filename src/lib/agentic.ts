@@ -21,7 +21,7 @@ export interface AgenticFactor {
 }
 
 export interface AgenticBrowsingResult {
-  /** Weighted 0-100 composite (each of the four factors weighs 25%). */
+  /** Weighted 0-100 composite (accessibility 40%, layout 35%, webmcp 15%, llms.txt 10%). */
   score: number;
   grade: Grade;
   factors: {
@@ -190,11 +190,14 @@ export function scoreAgenticBrowsing(html: string, llmsTxt: LlmsTxtState): Agent
     layout_stability: scoreLayoutStability($),
   };
 
+  // llms.txt is downweighted: primary-source evidence shows it is a discovery
+  // aid, not a proven citation lever. The accessibility tree and layout
+  // stability are what agents actually rely on to read and act on a page.
   const score = Math.round(
-    factors.llms_txt.score * 0.25 +
-      factors.webmcp.score * 0.25 +
-      factors.accessibility_tree.score * 0.25 +
-      factors.layout_stability.score * 0.25,
+    factors.llms_txt.score * 0.1 +
+      factors.webmcp.score * 0.15 +
+      factors.accessibility_tree.score * 0.4 +
+      factors.layout_stability.score * 0.35,
   );
 
   const findings: Finding[] = [];
@@ -204,7 +207,7 @@ export function scoreAgenticBrowsing(html: string, llmsTxt: LlmsTxtState): Agent
       category: "llms_txt",
       where: "/llms.txt",
       message: factors.llms_txt.detail,
-      fix: "Publish a spec-compliant llms.txt at the site root listing your key pages. Lighthouse's Agentic Browsing audit checks for it.",
+      fix: "Publish a spec-compliant llms.txt at the site root listing your key pages. Note: llms.txt is a discovery aid (Lighthouse checks for it), not a proven citation lever — don't expect a ranking/citation boost from it alone.",
       estimated_impact: "low",
     });
   }
