@@ -197,7 +197,7 @@ export const scoreAgenticBrowsingOutputShape = {
 export const generateLlmsTxtOutputShape = {
   domain: z.string(),
   llms_txt: z.string().describe("The generated llms.txt file content. Caller is responsible for hosting it."),
-  llms_full_txt: z.string().optional().describe("The generated llms-full.txt content. Present only when include_full=true."),
+  llms_full_txt: z.string().nullable().optional().describe("The generated llms-full.txt content. Null unless include_full=true."),
   pages_indexed: z.number().describe("Number of pages successfully sampled from the sitemap."),
 } as const;
 

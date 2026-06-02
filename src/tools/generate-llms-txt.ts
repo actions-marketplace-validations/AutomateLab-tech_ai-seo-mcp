@@ -4,8 +4,7 @@
 import { z } from "zod";
 import { politeFetch, type HostDelayMap } from "../lib/fetch.js";
 import { parseHead, parseBody } from "../lib/html.js";
-import { XMLParser } from "fast-xml-parser";
-import { checkSitemap } from "./check-sitemap.js";
+import { checkSitemap, parseSitemapXml, type SitemapUrl } from "./check-sitemap.js";
 import {
   groupPagesBySection,
   generateLlmsTxt as buildLlmsTxt,
@@ -46,11 +45,53 @@ export const generateLlmsTxtInputSchema = z.object({
 export type GenerateLlmsTxtInput = z.infer<typeof generateLlmsTxtInputSchema>;
 
 export interface LlmsTxtResult {
+  domain: string;
   llms_txt: string;
   llms_full_txt: string | null;
   pages_indexed: number;
   validation_issues: Finding[];
   suggested_path: "/llms.txt";
+}
+
+// Walk a sitemap, following sitemap-index files to any depth, and collect the
+// <url> entries from every referenced child sitemap. Bounded by MAX_FETCHES so a
+// pathological index tree can't fan out unbounded.
+async function collectSitemapUrls(
+  rootSitemapUrl: string,
+  hostDelays?: HostDelayMap,
+  robotsCache?: Map<string, string>
+): Promise<SitemapUrl[]> {
+  const MAX_FETCHES = 50;
+  const collected: SitemapUrl[] = [];
+  const queue: string[] = [rootSitemapUrl];
+  const visited = new Set<string>();
+  let fetches = 0;
+
+  while (queue.length > 0 && fetches < MAX_FETCHES) {
+    const url = queue.shift() as string;
+    if (visited.has(url)) continue;
+    visited.add(url);
+
+    let body: string;
+    try {
+      const res = await politeFetch(url, { respectRobots: false, hostDelays, robotsCache });
+      fetches++;
+      body = res.body;
+    } catch {
+      continue; // skip sitemaps that fail to fetch
+    }
+
+    const { urls, isSitemapIndex, childSitemaps } = parseSitemapXml(body, url);
+    if (isSitemapIndex) {
+      for (const child of childSitemaps) {
+        if (!visited.has(child)) queue.push(child);
+      }
+    } else {
+      collected.push(...urls);
+    }
+  }
+
+  return collected;
 }
 
 function normalizeDomain(domain: string): string {
@@ -82,31 +123,23 @@ export async function generateLlmsTxtTool(
       robotsCache
     );
     if (sitemapResult.status === "found" && sitemapResult.sitemap_url) {
-      // Re-fetch the sitemap to get priority-sorted URLs
+      // Re-walk the sitemap (following sitemap-index files into their children)
+      // to get priority-sorted URLs.
       try {
-        const sRes = await politeFetch(sitemapResult.sitemap_url, {
-          respectRobots: false,
+        const sitemapUrls = await collectSitemapUrls(
+          sitemapResult.sitemap_url,
           hostDelays,
-          robotsCache,
-        });
-        const parser = new XMLParser({ ignoreAttributes: false });
-        const parsed = parser.parse(sRes.body) as Record<string, unknown>;
-        const urlset = parsed["urlset"] as Record<string, unknown> | undefined;
-        if (urlset) {
-          const urlEntries = urlset["url"];
-          const urlList: Array<Record<string, unknown>> = Array.isArray(urlEntries)
-            ? (urlEntries as Array<Record<string, unknown>>)
-            : urlEntries ? [urlEntries as Record<string, unknown>] : [];
-          pageUrls = urlList
-            .sort((a, b) => {
-              const pa = parseFloat(String(a["priority"] ?? "0.5"));
-              const pb = parseFloat(String(b["priority"] ?? "0.5"));
-              return pb - pa;
-            })
-            .slice(0, input.max_pages)
-            .map((u) => String(u["loc"] ?? ""))
-            .filter(Boolean);
-        }
+          robotsCache
+        );
+        pageUrls = sitemapUrls
+          .sort((a, b) => {
+            const pa = parseFloat(a.priority ?? "0.5");
+            const pb = parseFloat(b.priority ?? "0.5");
+            return pb - pa;
+          })
+          .slice(0, input.max_pages)
+          .map((u) => u.loc)
+          .filter(Boolean);
       } catch {
         // fall through to root page fallback
       }
@@ -202,6 +235,7 @@ export async function generateLlmsTxtTool(
   validation_issues.push(...structuralIssues);
 
   return {
+    domain: hostname,
     llms_txt,
     llms_full_txt,
     pages_indexed: pages.length,

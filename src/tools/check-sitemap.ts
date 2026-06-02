@@ -47,7 +47,7 @@ function normalizeDomain(domain: string): string {
   return domain.replace(/\/$/, "");
 }
 
-interface SitemapUrl {
+export interface SitemapUrl {
   loc: string;
   lastmod?: string;
   priority?: string;
@@ -64,7 +64,7 @@ function isStale(lastmod: string): boolean {
   }
 }
 
-function parseSitemapXml(
+export function parseSitemapXml(
   xml: string,
   sitemapUrl: string
 ): { urls: SitemapUrl[]; isSitemapIndex: boolean; childSitemaps: string[] } {
